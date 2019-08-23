@@ -1,8 +1,7 @@
 const fsx = require('fs-extra');
-const argv = require('minimist')(process.argv.slice(2));
 
 // do
-const doTask = (done) => {
+const doTask = (argv, done) => {
     // get options file
     let options = argv.options || '',
         flag = argv.flag || '',
@@ -10,7 +9,7 @@ const doTask = (done) => {
         forcedQuickBuild = argv.quick,
         optionsJSON = null;
     if (!options) {
-        console.log('Build options definition is not configured. Use --options <options-file> to configure build script in package.json'); // eslint-disable-line no-console
+        console.log('Build options definition is not configured. Use --options <file> to define.'); // eslint-disable-line no-console
         done(); return;
     }
 
@@ -21,7 +20,7 @@ const doTask = (done) => {
     if (flag) { // active flag defined
         optionsJSON.activeFlag = flag;
     }
-    let engine = optionsJSON.engine || '../flairBuild.js';
+    let engine = optionsJSON.engine || './flairBuild.js';
     if (!engine) {
         console.log('Build engine is not configured. Define correct path of flairBuild.js at "engine" option in build options file.'); // eslint-disable-line no-console
         done(); return;
@@ -32,6 +31,6 @@ const doTask = (done) => {
     flairBuild(optionsJSON, done);
 };
 
-exports.build = function(cb) {
-    doTask(cb);
+exports.run = function(argv, cb) {
+    doTask(argv, cb);
 };

@@ -2,7 +2,7 @@ const path = require('path');
 const fsx = require('fs-extra');
 const del = require('del');
 const copyDir = require('copy-dir');
-const argv = require('minimist')(process.argv.slice(2));
+const open = require('open');
 
 const delAll = (root) => {
     del.sync([root + '/**', '!' + root]);
@@ -14,7 +14,7 @@ const NPM = (options) => {
     delAll(dest);
    
     // copy files to package, so it can be published using
-    // via npm publish <package-folder>/npm
+    // via npm publish <package<package-folder>/npm
     let files = options.files;
     
     let _src, _dest = '';
@@ -34,15 +34,18 @@ const NPM = (options) => {
             fsx.copyFileSync(_src, _dest);
         }
     }
+
+    // build package
+    open(`npm pack ${dest}`);
 };
 
 // do
-const doTask = (done) => {
+const doTask = (argv, done) => {
     // get options file
     let options = argv.options || '',
         optionsJSON = null;
     if (!options) {
-        console.log('Package options definition is not configured. Use --options <options-file> to configure package script in package.json'); // eslint-disable-line no-console
+        console.log('Package options definition is not configured. Use --options <file> to define.'); // eslint-disable-line no-console
         return;
     }
 
@@ -56,6 +59,6 @@ const doTask = (done) => {
     done();
 };
 
-exports.pack = function(cb) {
-    doTask(cb);
+exports.run = function(argv, cb) {
+    doTask(argv, cb);
 };

@@ -1,16 +1,15 @@
 const fsx = require('fs-extra');
 const path = require('path');
 const fg = require('fast-glob');
-const argv = require('minimist')(process.argv.slice(2));
 
 // do
-const doTask = (done) => {
+const doTask = (argv, done) => {
     // get options file
     let options = argv.options || '',
         clientMode = argv.client,
         optionsJSON = null;
     if (!options) {
-        console.log('Test options definition is not configured. Use --options <options-file> to configure test script in package.json');  // eslint-disable-line no-console
+        console.log('Test options definition is not configured. Use --options <file> to define.');  // eslint-disable-line no-console
         return;
     }
 
@@ -71,6 +70,6 @@ const doTask = (done) => {
     }
 };
 
-exports.test = function(cb) {
-    doTask(cb);
+exports.run = function(argv, cb) {
+    doTask(argv, cb);
 };

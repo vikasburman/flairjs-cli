@@ -1,15 +1,14 @@
 const fsx = require('fs-extra');
 const path = require('path');
-const argv = require('minimist')(process.argv.slice(2));
 const readline = require('readline');
 
 // do
-const doTask = (done) => {
+const doTask = (argv, done) => {
     // change active flag of current build in dest
     let options = argv.options || '',
         optionsJSON = null
     if (!options) {
-        console.log('Build options definition is not configured. Use --options <options-file> to configure build script in package.json'); // eslint-disable-line no-console
+        console.log('Build options definition is not configured. Use --options <file> to define.'); // eslint-disable-line no-console
         done(); return;
     }
 
@@ -62,6 +61,6 @@ const doTask = (done) => {
     });
 };
 
-exports.flag = function(cb) {
-    doTask(cb);
+exports.run = function(argv, cb) {
+    doTask(argv, cb);
 };
