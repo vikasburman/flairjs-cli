@@ -1,5 +1,0 @@
-{
-    "bootModule": "flairjs-fabric",
-    "bootEngine": "flair.app.BootEngine",
-    "config": "./appConfig.json | ./webConfig.json"
-}

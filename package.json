@@ -1,7 +1,7 @@
 {
     "name": "flairjs-cli",
-    "title": "Flair.js",
-    "description": "FlairJS CLI - The Ops Engine",
+    "title": "Flair.js CLI",
+    "description": "FlairJS CLI - The DevOps engine for FlairJS Ecosystem",
     "copyright": "(c) 2017-2019 Vikas Burman",
     "version": "0.55.62",
     "author": "Vikas Burman <vikasburman@gmail.com>",
@@ -19,15 +19,11 @@
         "type": "git",
         "url": "https://github.com/vikasburman/flairjs.git"
     },
-    "main": "./flair.js",
+    "bin": {
+        "flair": "./index.js"
+    },
     "scripts": {
-        "build": "gulp build --options ./config/build.json",
-        "build-full": "gulp build --full --options ./config/build.json",
-        "build-quick": "gulp build --quick --options ./config/build.json",
-        "test": "gulp test --TEST --options ./config/test.json",
-        "test-client": "gulp test --TEST --client --options ./config/test.json",
-        "serve": "http-server ./ -p8088 && pkill -f http-server",
-        "package": "gulp package --options ./config/pack.json && npm pack ./publish/package/npm"
+        "package": "npm pack"
     },
     "dependencies": {
         "clean-css": "^4.2.1",
