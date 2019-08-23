@@ -1,18 +1,13 @@
 {
-    "name": "flairjs",
+    "name": "flairjs-cli",
     "title": "Flair.js",
-    "description": "True Object Oriented JavaScript",
+    "description": "FlairJS CLI - The Ops Engine",
     "copyright": "(c) 2017-2019 Vikas Burman",
     "version": "0.55.62",
     "author": "Vikas Burman <vikasburman@gmail.com>",
     "keywords": [
         "javascript",
-        "oops",
-        "js",
-        "object oriented",
-        "es6",
-        "es5",
-        "es7"
+        "flairjs"
     ],
     "engines": {
         "node": ">=10"
@@ -34,7 +29,7 @@
         "serve": "http-server ./ -p8088 && pkill -f http-server",
         "package": "gulp package --options ./config/pack.json && npm pack ./publish/package/npm"
     },
-    "devDependencies": {
+    "dependencies": {
         "clean-css": "^4.2.1",
         "copy-dir": "^1.1.0",
         "del": "^5.0.0",
@@ -51,6 +46,5 @@
         "recursive-readdir-sync": "^1.0.6",
         "stylelint": "^10.1.0",
         "uglify-es": "^3.3.9"
-    },
-    "dependencies": {}
+    }
 }
