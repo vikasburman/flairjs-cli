@@ -2,8 +2,6 @@ const path = require('path');
 const fsx = require('fs-extra');
 const del = require('del');
 const copyDir = require('copy-dir');
-const packageJSON = require(path.join(process.cwd(), 'package.json'));
-const { spawnSync } = require('child_process');
 
 const delAll = (root) => {
     del.sync([root + '/**', '!' + root]);
@@ -41,16 +39,6 @@ const NPM = (argv, options) => {
         }
     }
     console.log('           - done');
-
-    // build package
-    console.log('       tarball:');
-    let child = spawnSync('yarn', ['pack', dest]);
-    let tgzFile = `${packageJSON.name}-v${packageJSON.version}.tgz`;
-    if (!fsx.existsSync(tgzFile)) {
-        console.log(`           - error: ${child.error}`);
-    } else {
-        console.log(`           - done: ${tgzFile}`);
-    }
 
     console.log('   package: npm (end)');
 };
