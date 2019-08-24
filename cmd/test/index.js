@@ -19,7 +19,7 @@ const doTask = (argv, done) => {
     // run tests
     if (clientMode) {
         // create temp spec runner
-        const runnerTemplate = optionsJSON.jasmine.specRunner;
+        const runnerTemplate = require.resolve('flairjs-cli/cmd/test/jasmine/SpecRunner.html');
         let tempDir = optionsJSON.jasmine.temp_dir;
         let tempRunner = path.join(tempDir, 'specRunner.html');
         fsx.ensureDirSync(tempDir);

@@ -7,7 +7,7 @@ const doTask = (argv, done) => {
     console.log('');
     switch(cmdName) {
         case 'create':
-            console.log('Usage: flair create --<type> [<name>]');
+            console.log('Usage: flair create <type>');
             console.log('');
             console.log('   create boilerplate project for specified type');
             console.log('');
@@ -17,10 +17,7 @@ const doTask = (argv, done) => {
             console.log('       app      \t flairjs app project');
             console.log('       firebase \t flairjs firebase-app project');
             console.log('');
-            console.log('   name: (optional)');
-            console.log('       name of the project');
-            console.log('');
-            console.log('Example: flair create --app MyApp');
+            console.log('Example: flair create app');
             break;
         case 'build':
             console.log('Usage: flair build --options <file> [flags]');
@@ -34,7 +31,7 @@ const doTask = (argv, done) => {
             console.log('       --full | --quick  \t use full-set or quick-set options');
             console.log('       --flag <flagName> \t use given flag as default for distribution files');
             console.log('');
-            console.log('Example: flair build --options ./config/build.json --full --flag prod');
+            console.log('Example: flair build --options ./config/build/options.json --full --flag prod');
             break;
         case 'flag':
             console.log('Usage: flair flag --options <file>');
@@ -44,7 +41,7 @@ const doTask = (argv, done) => {
             console.log('   --options <file>: build options file\'s location and name');
             console.log('   (refer online help to know the structure of build options file)');
             console.log('');
-            console.log('Example: flair flag --options ./config/build.json');
+            console.log('Example: flair flag --options ./config/build/options.json');
             break;            
         case 'pack':             
             console.log('Usage: flair pack --options <file>');
@@ -54,7 +51,7 @@ const doTask = (argv, done) => {
             console.log('   --options <file>: package options file\'s location and name');
             console.log('   (refer online help to know the structure of package options file)');
             console.log('');
-            console.log('Example: flair pack --options ./config/pack.json');
+            console.log('Example: flair pack --options ./config/pack/options.json');
             break;            
         case 'test':
             console.log('Usage: flair test --options <file> [flags]');
@@ -67,7 +64,7 @@ const doTask = (argv, done) => {
             console.log('   flags: (optional)');
             console.log('       --server | --client \t initiate server-side or client-side tests execution');
             console.log('');
-            console.log('Example: flair test --options ./config/test.json --client');
+            console.log('Example: flair test --options ./config/test/options.json --client');
             break;            
         case 'help':
             console.log('Usage: flair help [cmd]');
@@ -86,12 +83,12 @@ const doTask = (argv, done) => {
             console.log('Usage: flair command [options]');
             console.log('');
             console.log('   command:');
-            console.log('       create --<type> [<name>]  \t create boilerplate project for specified type');
-            console.log('       build --o <file> [flags]  \t assemble dist files');
-            console.log('       test --o <file>           \t initiate tests execution');
-            console.log('       pack --o <file>           \t create publish package(s)');
-            console.log('       flag --o <file>           \t interactively set flag for dist files');
-            console.log('       help [cmd]                \t displays help information for a command');
+            console.log('       create <type>                   \t create boilerplate project for specified type');
+            console.log('       build --options <file> [flags]  \t assemble dist files');
+            console.log('       pack --options <file>           \t create publish package(s)');
+            console.log('       test --options <file>           \t initiate tests execution');
+            console.log('       flag --options <file>           \t interactively set flag for dist files');
+            console.log('       help [cmd]                      \t displays help information for a command');
             break;
     };
     console.log('');

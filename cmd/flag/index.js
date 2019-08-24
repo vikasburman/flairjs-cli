@@ -20,9 +20,9 @@ const doTask = (argv, done) => {
         input: process.stdin,
         output: process.stdout
     });
-    rl.question('Set active flag (dev, prod, <...>): ', (activeFlag) => {
+    rl.question('   Flag? (dev, prod, <...>): ', (activeFlag) => {
         if (activeFlag) {
-            rl.question(`On builds at ${optionsJSON.dest} (<...>,<...>): `, (atFolders) => {
+            rl.question(`   Build folders? ${optionsJSON.dest} (<...>,<...>): `, (atFolders) => {
                 let folders = [''];
                 if (atFolders) {
                     folders = atFolders.split(',')
@@ -41,12 +41,12 @@ const doTask = (argv, done) => {
                             flags.__active = activeFlag; // mark this as active
                             content = JSON.stringify(flags);
                             fsx.writeFileSync(fileName, content, 'utf8');
-                            console.log(`Updated: ${fileName} [flagged: ${oldFlag} -> ${activeFlag}]`);
+                            console.log(`       - done: ${fileName} [flagged: ${oldFlag} -> ${activeFlag}]`);
                         } else {
-                            console.log(`Active marked flag: '${flag}' does not exists in '${fld}/flags.json. Could not flag the build.`); // eslint-disable-line no-console
+                            console.log(`       - error: Flag: '${flag}' does not exists in '${fld}/flags.json.`); // eslint-disable-line no-console
                         }
                     } else {
-                        console.log(`'${fileName} does not exists. Could not flag the build.`); // eslint-disable-line no-console
+                        console.log(`       - error: ${fileName} does not exists.`); // eslint-disable-line no-console
                     }                    
                 }
 
@@ -62,5 +62,9 @@ const doTask = (argv, done) => {
 };
 
 exports.run = function(argv, cb) {
-    doTask(argv, cb);
+    console.log('flairFlag: (start)');
+    doTask(argv, () => {
+        console.log('flairFlag: (end)');
+        cb();
+    });
 };

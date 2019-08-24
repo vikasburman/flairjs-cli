@@ -44,12 +44,12 @@
     };    
 
     // templates
-    const asm_module = fsx.readFileSync(path.join(__dirname, 'templates/asm_module.js'), 'utf8')
-    const asm_type_async = fsx.readFileSync(path.join(__dirname, 'templates/asm_type_async.js'), 'utf8');
-    const asm_type_sync = fsx.readFileSync(path.join(__dirname, 'templates/asm_type_sync.js'), 'utf8');
-    const asm_resource = fsx.readFileSync(path.join(__dirname, 'templates/asm_resource.js'), 'utf8');
-    const asm_preamble = fsx.readFileSync(path.join(__dirname, 'templates/asm_preamble.js'), 'utf8');
-    const asm_preamble_line = fsx.readFileSync(path.join(__dirname, 'templates/asm_preamble_line.js'), 'utf8');
+    const asm_module = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_module.js'), 'utf8')
+    const asm_type_async = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_type_async.js'), 'utf8');
+    const asm_type_sync = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_type_sync.js'), 'utf8');
+    const asm_resource = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_resource.js'), 'utf8');
+    const asm_preamble = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_preamble.js'), 'utf8');
+    const asm_preamble_line = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_preamble_line.js'), 'utf8');
 
     // support functions
     const getFolders = (root, excludeRoot) => {
@@ -1355,7 +1355,7 @@
                         exec: null
                     };
                     if (path.basename(p.file) === p.file) { // no path given, means it is an inbuilt plugin
-                        p.file = path.join(options.engine.replace('flairBuild.js', 'plugins'),  p.file);
+                        p.file = path.join(__dirname,  'plugins', p.file);
                     }
                     if (p.file) {
                         plugins[p.name].file = p.file;

@@ -20,13 +20,9 @@ const doTask = (argv, done) => {
     if (flag) { // active flag defined
         optionsJSON.activeFlag = flag;
     }
-    let engine = optionsJSON.engine || './flairBuild.js';
-    if (!engine) {
-        console.log('Build engine is not configured. Define correct path of flairBuild.js at "engine" option in build options file.'); // eslint-disable-line no-console
-        done(); return;
-    }
 
     // load and run engine
+    let engine = require.resolve('flairjs-cli/cmd/build/flairBuild.js');
     let flairBuild = require(engine);
     flairBuild(optionsJSON, done);
 };

@@ -2,19 +2,25 @@ const path = require('path');
 const fsx = require('fs-extra');
 const del = require('del');
 const copyDir = require('copy-dir');
-const open = require('open');
+const packageJSON = require(path.join(process.cwd(), 'package.json'));
+const { spawnSync } = require('child_process');
 
 const delAll = (root) => {
     del.sync([root + '/**', '!' + root]);
 };
-const NPM = (options) => {
+const NPM = (argv, options) => {
     let dest = path.join(path.resolve(options.dest), 'npm');
     
+    console.log('   package: npm (start)');
+
     // delete all old files of package
+    console.log('       clean:');
     delAll(dest);
-   
+    console.log('           - done');
+
     // copy files to package, so it can be published using
     // via npm publish <package<package-folder>/npm
+    console.log('       copy:');
     let files = options.files;
     
     let _src, _dest = '';
@@ -34,9 +40,19 @@ const NPM = (options) => {
             fsx.copyFileSync(_src, _dest);
         }
     }
+    console.log('           - done');
 
     // build package
-    open(`npm pack ${dest}`);
+    console.log('       tarball:');
+    let child = spawnSync('yarn', ['pack', dest]);
+    let tgzFile = `${packageJSON.name}-v${packageJSON.version}.tgz`;
+    if (!fsx.existsSync(tgzFile)) {
+        console.log(`       - error: ${child.error}`);
+    } else {
+        console.log(`       - done: ${tgzFile}`);
+    }
+
+    console.log('   package: npm (end)');
 };
 
 // do
@@ -53,12 +69,16 @@ const doTask = (argv, done) => {
     optionsJSON = fsx.readJSONSync(options, 'utf8');
 
     // process each supported type of packaging
-    NPM(optionsJSON.npm);
+    NPM(argv, optionsJSON.npm);
 
     // done
     done();
 };
 
 exports.run = function(argv, cb) {
-    doTask(argv, cb);
+    console.log('flairPack: (start)');
+    doTask(argv, () => {
+        console.log('flairPack: (end)');
+        cb();
+    });
 };
