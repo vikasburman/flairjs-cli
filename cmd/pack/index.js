@@ -47,9 +47,9 @@ const NPM = (argv, options) => {
     let child = spawnSync('yarn', ['pack', dest]);
     let tgzFile = `${packageJSON.name}-v${packageJSON.version}.tgz`;
     if (!fsx.existsSync(tgzFile)) {
-        console.log(`       - error: ${child.error}`);
+        console.log(`           - error: ${child.error}`);
     } else {
-        console.log(`       - done: ${tgzFile}`);
+        console.log(`           - done: ${tgzFile}`);
     }
 
     console.log('   package: npm (end)');

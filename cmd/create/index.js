@@ -12,7 +12,7 @@ const doTask = (argv, done) => {
         case 'api': gitProject = 'github:vikasburman/flairjs-template-api'; break;
         case 'app': gitProject = 'github:vikasburman/flairjs-template-app'; break;
         case 'firebase': gitProject = 'github:vikasburman/flairjs-template-firebase-app'; break;
-        default: console.log(`Unknown type: ${type}`); break;
+        default: console.log(`  Unknown type '${type}'`); break;
     }
 
     // download project
