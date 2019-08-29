@@ -26,12 +26,14 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
 
     options.logger(0, 'copy', '', true);  
 
-    // copy all files or folders as is in dest
+    // copy all files or folders as is from src in dest
     let src = '',
+        bareSrc = '',
+        dispSrc = '',
         dest = '';
 
-    let copyThis = (_fileOrFolder, _src, _dest) => {
-        options.logger(1, '', './' + path.join(options.src, _fileOrFolder));
+    let copyThis = (_fileOrFolder, _src, _dest, _bareSrc) => {
+        options.logger(1, '', _bareSrc);
         if (fsx.lstatSync(_src).isDirectory()) {
             fsx.ensureDirSync(_dest);
             copyDir.sync(_src, _dest, {
@@ -45,18 +47,66 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
         }        
 
     };
+    // file definition can be:
+    // "file|folder" <-- assumed to be at root folder of the profile
+    // "./file|folder" <-- assumed to be at root of the profile
+    // "../file|folder" <-- assumed to be at root of the source
+    // "~/file|folder" <-- assumed to be at root of the project
+    // "file|folder >> destination-path-and-name" <-- '>>' delimited if present - target path and file|folder name can be defined in relation to dest folder
+    // destination-path-name can start with: 
+    // "file|folder" <-- assumed to be at root folder of the profile at destination
+    // "./file|folder" <-- assumed to be at root of the profile at destination
+    // "../file|folder" <-- assumed to be at root of the destination
     for(let fileOrFolder of options.profiles.current.copy) {
-        src = path.resolve(path.join(options.src, path.join(options.profiles.current.root, fileOrFolder)));
-        dest = path.resolve(path.join(options.profiles.current.dest, fileOrFolder))
+        if (fileOrFolder.indexOf('>>') !== -1) {
+            let items = fileOrFolder.split('>>');
+            src = items[0].trim();
+            dest = items[1].trim();
+        } else {
+            src = fileOrFolder;
+            dest = '';
+        }
+        if (src.startsWith('../')) { // assume source root
+            dispSrc = src;
+            src = src.substr(3); //  remove '../'
+            bareSrc = src;
+            src = path.resolve(path.join(options.src, bareSrc));
+        } else if (src.startsWith('~/')) { // assume project root
+            dispSrc = src;
+            src = src.substr(2); //  remove '~/'
+            bareSrc = src;
+            src = path.resolve(path.join(process.cwd(), bareSrc));
+        } else { // assume profile root
+            if (src.startsWith('./')) { 
+                src = src.substr(2); //  remove './'
+            }
+            dispSrc = './' + src;
+            bareSrc = src;
+            src = path.resolve(path.join(options.src, options.profiles.current.root, bareSrc));
+        }
+        if (dest === '') { // specific target not given, assume same name and same path in context of dest folder
+            dest = path.resolve(path.join(options.profiles.current.dest, bareSrc))
+        } else { // specific target given, use given path and name in context of dest folder
+            if (dest.startsWith('../')) { // assume dest root
+                dest = dest.substr(3); //  remove '../'
+                dest = path.resolve(path.join(options.dest, dest));
+            } else { // assume profile dest root
+                if (dest.startsWith('./')) { 
+                    dest = dest.substr(2); //  remove './'
+                }                
+                dest = path.resolve(path.join(options.profiles.current.dest, dest));
+            }
+        }            
+    
         if (options.clean || options.fullBuild) { // cleaned or full build    
-            copyThis(fileOrFolder, src, dest);
+            copyThis(fileOrFolder, src, dest, dispSrc);
         } else if (!fsx.existsSync(dest)) { // file does not exists
-            copyThis(fileOrFolder, src, dest);
+            copyThis(fileOrFolder, src, dest, dispSrc);
         } else { // file exists
             if (fsx.statSync(src).mtime > fsx.statSync(dest).mtime) { // file updated
-                copyThis(fileOrFolder, src, dest);
+                copyThis(fileOrFolder, src, dest, dispSrc);
             } else {
-                options.logger(1, '', './' + path.join(options.src, fileOrFolder) + ' [exists, copy skipped]');
+                options.logger(1, '', dispSrc + ' [exists, copy skipped]');
             }
         }
     }
