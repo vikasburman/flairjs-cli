@@ -28,9 +28,19 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
         copyDir.sync(src, dest, {
             utimes: true,
             mode: true,
-            cover: true
+            cover: true,
+            filter: function(stat, filepath, filename){
+                // do not want copy symbolicLink file or folders
+                if (stat === 'symbolicLink') {
+                  return false;
+                }
+                return true;  // remind to return a true value when file check passed.
+              }            
           });
     };
+    // modules can be defined as:
+    // "moduleName" <-- directly looked under node_modules and copied
+    // "moduleName/folder" <-- specific folder is looked under node_modules/moduleName and copied
     for(let module of options.profiles.current.modules) {
         modName = module;
         src = path.resolve(path.join('node_modules', module));
