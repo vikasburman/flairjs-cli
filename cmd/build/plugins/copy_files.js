@@ -1,5 +1,7 @@
 const path = require('path');
 const fsx = require('fs-extra');
+const rrd = require('recursive-readdir-sync'); 
+const del = require('del');
 const copyDir = require('copy-dir');
 
 const wildcardMatch = (find, source) => { // for future use when we support basic wildcard in copy definitions
@@ -32,9 +34,12 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
         dispSrc = '',
         dest = '';
 
-    let copyThis = (_fileOrFolder, _src, _dest, _bareSrc) => {
+    let copyThis = (_src, _dest, _bareSrc) => {
         options.logger(1, '', _bareSrc);
         if (fsx.lstatSync(_src).isDirectory()) {
+            if (fsx.existsSync(_dest) && !(options.clean || options.fullBuild)) { // if exists and clean or full build not happening, delete the folder, so any deleted files are removed
+                del.sync([_dest]); 
+            }
             fsx.ensureDirSync(_dest);
             copyDir.sync(_src, _dest, {
                 utimes: true,
@@ -45,7 +50,6 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
             fsx.ensureDirSync(path.dirname(_dest));
             fsx.copyFileSync(_src, _dest);
         }        
-
     };
     // file definition can be:
     // "file|folder" <-- assumed to be at root folder of the profile
@@ -99,14 +103,30 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
         }            
     
         if (options.clean || options.fullBuild) { // cleaned or full build    
-            copyThis(fileOrFolder, src, dest, dispSrc);
+            copyThis(src, dest, dispSrc);
         } else if (!fsx.existsSync(dest)) { // file does not exists
-            copyThis(fileOrFolder, src, dest, dispSrc);
+            copyThis(src, dest, dispSrc);
         } else { // file exists
             if (fsx.statSync(src).mtime > fsx.statSync(dest).mtime) { // file updated
-                copyThis(fileOrFolder, src, dest, dispSrc);
+                copyThis(src, dest, dispSrc);
             } else {
-                options.logger(1, '', dispSrc + ' [exists, copy skipped]');
+                // folder specific checking
+                if (fsx.lstatSync(src).isDirectory()) {
+                    // get most recent updated file in src and if that time is greater than dest folder time, means something is updated in this folder
+                    let _files = rrd(src),
+                        _isUpdated = false;
+                    for (let _file of _files) { 
+                        _isUpdated = fsx.statSync(_file).mtime > fsx.statSync(dest).mtime;
+                        if (_isUpdated) { break; }
+                    }
+                    if (_isUpdated) {
+                        copyThis(src, dest, dispSrc);
+                    } else {
+                        options.logger(1, '', dispSrc + ' [exists, copy skipped]');
+                    }
+                } else {
+                    options.logger(1, '', dispSrc + ' [exists, copy skipped]');
+                }
             }
         }
     }

@@ -1354,8 +1354,8 @@
                         file: p.file,
                         exec: null
                     };
-                    if (path.basename(p.file) === p.file) { // no path given, means it is an inbuilt plugin
-                        p.file = path.join(__dirname,  'plugins', p.file);
+                    if (!p.file) { // no file defined, means it is an inbuilt plugin
+                        p.file = path.join(__dirname,  'plugins', p.name + '.js'); // same name file as of plugin name
                     }
                     if (p.file) {
                         plugins[p.name].file = p.file;
