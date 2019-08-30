@@ -32,7 +32,9 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
     let src = '',
         bareSrc = '',
         dispSrc = '',
-        dest = '';
+        dest = '',
+        isDeleteFileOrFolder = false,
+        ifPickFromDest = false;
 
     let copyThis = (_src, _dest, _bareSrc) => {
         options.logger(1, '', _bareSrc);
@@ -51,18 +53,42 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
             fsx.copyFileSync(_src, _dest);
         }        
     };
-    // file definition can be:
-    // "file|folder" <-- assumed to be at root folder of the profile
-    // "./file|folder" <-- assumed to be at root of the profile
-    // "../file|folder" <-- assumed to be at root of the source
-    // "~/file|folder" <-- assumed to be at root of the project
-    // "file|folder >> destination-path-and-name" <-- '>>' delimited if present - target path and file|folder name can be defined in relation to dest folder
-    // destination-path-name can start with: 
-    // "file|folder" <-- assumed to be at root folder of the profile at destination
-    // "./file|folder" <-- assumed to be at root of the profile at destination
-    // "../file|folder" <-- assumed to be at root of the destination
+    // file definition format can be:
+    // source
+    // source >> destination
+    // source X
+    // source can be:
+    //      "file|folder" <-- assumed to be at root folder of the profile
+    //      "./file|folder" <-- assumed to be at root of the profile
+    //      "../file|folder" <-- assumed to be at root of the source
+    //      "~/file|folder" <-- assumed to be at root of the project
+    // special source modifiers:
+    //      [>] source - is a modifier which will pick the source file|folder in context of destination folder, instead of source folder
+    //          this applies for ./ and ../ cases but not ~/
+    //      [X] source - is a modifier which will pick the source file|folder in context of destination folder, instead of source folder
+    //          and will delete this file|folder
+    //          this means if for some reason some files are copied at destination either via build or otherwise 
+    //          using another copying mechanism when they are transferred at other location, these can be deleted via this
+    //          in this case - no destination should be provided, else this flag will be ignored
+    // destination can be:
+    //      "file|folder" <-- assumed to be at root folder of the profile at destination folder
+    //      "./file|folder" <-- assumed to be at root folder of the profile at destination folder
+    //      "../file|folder" <-- assumed to be at root folder of the destination folder
     for(let fileOrFolder of options.profiles.current.copy) {
-        if (fileOrFolder.indexOf('>>') !== -1) {
+        fileOrFolder = fileOrFolder.trim();
+        isDeleteFileOrFolder = false;
+        ifPickFromDest = false;
+        if (fileOrFolder.startsWith('[X]')) { // if delete flag is given
+            fileOrFolder = fileOrFolder.substr(3).trim(); // remove [X]
+            if (fileOrFolder.indexOf('>>') === -1) { // destination not given, then only
+                isDeleteFileOrFolder = true;
+            }
+        } else if (fileOrFolder.startsWith('[>]')) { // if pick from dest flag is given
+            fileOrFolder = fileOrFolder.substr(3).trim(); // remove [>]
+            ifPickFromDest = true;
+        }        
+
+        if (fileOrFolder.indexOf('>>') !== -1) { // destination given
             let items = fileOrFolder.split('>>');
             src = items[0].trim();
             dest = items[1].trim();
@@ -74,7 +100,7 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
             dispSrc = src;
             src = src.substr(3); //  remove '../'
             bareSrc = src;
-            src = path.resolve(path.join(options.src, bareSrc));
+            src = path.resolve(path.join((ifPickFromDest ? options.dest : options.src), bareSrc));
         } else if (src.startsWith('~/')) { // assume project root
             dispSrc = src;
             src = src.substr(2); //  remove '~/'
@@ -86,10 +112,22 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
             }
             dispSrc = './' + src;
             bareSrc = src;
-            src = path.resolve(path.join(options.src, options.profiles.current.root, bareSrc));
+            src = path.resolve(path.join((ifPickFromDest ? options.dest : options.src), options.profiles.current.root, bareSrc));
         }
         if (dest === '') { // specific target not given, assume same name and same path in context of dest folder
-            dest = path.resolve(path.join(options.profiles.current.dest, bareSrc))
+            if (isDeleteFileOrFolder) {
+                if (dest.startsWith('../')) { // assume dest root
+                    dest = dest.substr(3); //  remove '../'
+                    dest = path.resolve(path.join(options.dest, dest));
+                } else { // assume profile dest root
+                    if (dest.startsWith('./')) { 
+                        dest = dest.substr(2); //  remove './'
+                    }                
+                    dest = path.resolve(path.join(options.profiles.current.dest, dest));
+                }
+            } else {
+                dest = path.resolve(path.join(options.profiles.current.dest, bareSrc));
+            }
         } else { // specific target given, use given path and name in context of dest folder
             if (dest.startsWith('../')) { // assume dest root
                 dest = dest.substr(3); //  remove '../'
@@ -102,30 +140,38 @@ exports.exec = function(settings, options, cb) { // eslint-disable no-unused-var
             }
         }            
     
-        if (options.clean || options.fullBuild) { // cleaned or full build    
-            copyThis(src, dest, dispSrc);
-        } else if (!fsx.existsSync(dest)) { // file does not exists
-            copyThis(src, dest, dispSrc);
-        } else { // file exists
-            if (fsx.statSync(src).mtime > fsx.statSync(dest).mtime) { // file updated
-                copyThis(src, dest, dispSrc);
+        if (isDeleteFileOrFolder) { // if to delete
+            if (fsx.existsSync(dest)) {
+                del.sync([dest]); // delete this folder at destination
             } else {
-                // folder specific checking
-                if (fsx.lstatSync(src).isDirectory()) {
-                    // get most recent updated file in src and if that time is greater than dest folder time, means something is updated in this folder
-                    let _files = rrd(src),
-                        _isUpdated = false;
-                    for (let _file of _files) { 
-                        _isUpdated = fsx.statSync(_file).mtime > fsx.statSync(dest).mtime;
-                        if (_isUpdated) { break; }
-                    }
-                    if (_isUpdated) {
-                        copyThis(src, dest, dispSrc);
+                console.log(dest + ' ------------');
+            }
+        } else { // to copy
+            if (options.clean || options.fullBuild) { // cleaned or full build    
+                copyThis(src, dest, dispSrc);
+            } else if (!fsx.existsSync(dest)) { // file does not exists
+                copyThis(src, dest, dispSrc);
+            } else { // file exists
+                if (fsx.statSync(src).mtime > fsx.statSync(dest).mtime) { // file updated
+                    copyThis(src, dest, dispSrc);
+                } else {
+                    // folder specific checking
+                    if (fsx.lstatSync(src).isDirectory()) {
+                        // get most recent updated file in src and if that time is greater than dest folder time, means something is updated in this folder
+                        let _files = rrd(src),
+                            _isUpdated = false;
+                        for (let _file of _files) { 
+                            _isUpdated = fsx.statSync(_file).mtime > fsx.statSync(dest).mtime;
+                            if (_isUpdated) { break; }
+                        }
+                        if (_isUpdated) {
+                            copyThis(src, dest, dispSrc);
+                        } else {
+                            options.logger(1, '', dispSrc + ' [exists, copy skipped]');
+                        }
                     } else {
                         options.logger(1, '', dispSrc + ' [exists, copy skipped]');
                     }
-                } else {
-                    options.logger(1, '', dispSrc + ' [exists, copy skipped]');
                 }
             }
         }
