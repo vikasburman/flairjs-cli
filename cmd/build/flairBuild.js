@@ -402,18 +402,27 @@
                     if (file.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
         
                     // handle position first
-                    let index = 999999999, // all are at bottom by default
+                    let lastIndex = 999999999, 
+                        index = lastIndex, // all are at bottom by default
+                        idx = -1,
                         filePath = path.dirname(file),
                         fileName = path.basename(file),
                         originalFile = file;
-                    if (fileName.startsWith('@')) { // file name can be given @n- to help sorting a file before others - this helps in right bundeling order
-                        let idx = fileName.indexOf('-');
+                    if (fileName.startsWith('@')) { // file name can be given @n- to help sorting a file *before* others - this helps in right bundling order
+                        idx = fileName.indexOf('-');
                         if (idx !== -1) {
                             index = parseInt(fileName.substr(1, idx-1));
                             fileName = fileName.substr(idx+1);
                             file = path.join(filePath, fileName);
                         }
-                    }
+                    } else if (fileName.startsWith('~')) { // file name can be given ~n- to help sorting a file *after* others - this helps in right bundling order
+                        idx = fileName.indexOf('-');
+                        if (idx !== -1) {
+                            index = lastIndex + parseInt(fileName.substr(1, idx-1));
+                            fileName = fileName.substr(idx+1);
+                            file = path.join(filePath, fileName);
+                        }
+                    } 
         
                     let nsFile = {
                         nsPath: options.current.nsPath,
