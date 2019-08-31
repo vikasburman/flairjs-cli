@@ -438,11 +438,11 @@
                         nsFile.type = 'res';
                     }
                     if (nsFile.type !== 'routes') {
-                        if (nsFile.typeName.indexOf('.') !== -1) { throw `Type/Resource names cannot contain dots. (${nsFile.typeName})`; }
+                        if (nsFile.typeName.indexOf('.') !== -1) { throw `Type/Resource names cannot contain dots. (${options.current.nsName}.${nsFile.typeName})`; }
                         nsFile.qualifiedName = (options.current.nsName !== '(root)' ? options.current.nsName + '.' : resolveRootNS(true))  + nsFile.typeName;
 
                         if (options.current.ado.resourcesAndTypes.indexOf(nsFile.typeName) !== -1) {
-                            throw `Type/Resource is already added. (${nsFile.typeName})`; 
+                            throw `Type/Resource is already added. (${options.current.nsName}.${nsFile.typeName})`; 
                         } else {
                             options.current.ado.resourcesAndTypes.push(nsFile.typeName);
                             if (nsFile.type === 'res') {
