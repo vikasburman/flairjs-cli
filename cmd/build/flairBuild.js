@@ -407,15 +407,21 @@
                         idx = -1,
                         filePath = path.dirname(file),
                         fileName = path.basename(file),
-                        originalFile = file;
-                    if (fileName.startsWith('@')) { // file name can be given @n- to help sorting a file *before* others - this helps in right bundling order
+                        originalFile = file,
+                        place = 'normal';
+                    if (fileName.startsWith('@@')) {
+                        place = 'bottom';
+                    } else if (fileName.startsWith('@')) {
+                        place = 'top';
+                    }
+                    if (place === 'top') { // file name can be given @n- to help sorting a file *before* others - this helps in right bundling order
                         idx = fileName.indexOf('-');
                         if (idx !== -1) {
                             index = parseInt(fileName.substr(1, idx-1));
                             fileName = fileName.substr(idx+1);
                             file = path.join(filePath, fileName);
                         }
-                    } else if (fileName.startsWith('~')) { // file name can be given ~n- to help sorting a file *after* others - this helps in right bundling order
+                    } else if (place === 'bottom') { // file name can be given @@n- to help sorting a file *after* others - this helps in right bundling order
                         idx = fileName.indexOf('-');
                         if (idx !== -1) {
                             index = lastIndex + parseInt(fileName.substr(1, idx-1));
