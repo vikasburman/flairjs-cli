@@ -385,7 +385,7 @@
                     if (a.index > b.index) { return 1; }
                     return 0;
                 });
-    
+
                 done(); return; 
             }
 
@@ -424,7 +424,7 @@
                     } else if (place === 'bottom') { // file name can be given @@n- to help sorting a file *after* others - this helps in right bundling order
                         idx = fileName.indexOf('-');
                         if (idx !== -1) {
-                            index = lastIndex + parseInt(fileName.substr(1, idx-1));
+                            index = lastIndex + parseInt(fileName.substr(2, idx-1));
                             fileName = fileName.substr(idx+1);
                             file = path.join(filePath, fileName);
                         }

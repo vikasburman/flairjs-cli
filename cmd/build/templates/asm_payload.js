@@ -57,7 +57,7 @@ AppDomain.context.current().currentAssemblyBeingLoaded('<<which_file>>');
 // assembly embedded resources (end)        
 
 // clear assembly being loaded
-AppDomain.context.current().currentAssemblyBeingLoaded('');
+AppDomain.context.current().currentAssemblyBeingLoaded();
 
 // register assembly definition object
 AppDomain.registerAdo('<<ado>>');
