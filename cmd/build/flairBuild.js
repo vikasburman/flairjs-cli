@@ -109,7 +109,7 @@
         ver[0] = parseInt(ver[0]);
         ver[1] = parseInt(ver[1]);
         ver[2] = parseInt(ver[2]);
-        if (ver[2] >= 999) {
+        if (ver[2] >= 99) {
             ver[2] = 0
             if (ver[1] >= 99) {
                 ver[1] = 0
