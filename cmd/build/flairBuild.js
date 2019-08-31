@@ -397,6 +397,7 @@
             };
             const collectTypesAndResourcesAndRoutes = () => {
                 let files = rrd(options.current.nsPath);
+                options.current.ado.resourcesAndTypes = [];
                 for (let file of files) { 
                     if (file.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
         
@@ -439,11 +440,16 @@
                     if (nsFile.type !== 'routes') {
                         if (nsFile.typeName.indexOf('.') !== -1) { throw `Type/Resource names cannot contain dots. (${nsFile.typeName})`; }
                         nsFile.qualifiedName = (options.current.nsName !== '(root)' ? options.current.nsName + '.' : resolveRootNS(true))  + nsFile.typeName;
-        
-                        if (nsFile.type === 'res') {
-                            options.current.ado.resources.push(nsFile);
+
+                        if (options.current.ado.resourcesAndTypes.indexOf(nsFile.typeName) !== -1) {
+                            throw `Type/Resource is already added. (${nsFile.typeName})`; 
                         } else {
-                            options.current.ado.types.push(nsFile);
+                            options.current.ado.resourcesAndTypes.push(nsFile.typeName);
+                            if (nsFile.type === 'res') {
+                                options.current.ado.resources.push(nsFile);
+                            } else {
+                                options.current.ado.types.push(nsFile);
+                            }
                         }
                     } else {
                         let allRoutes = fsx.readJSONSync(nsFile.file, 'utf8');
@@ -489,6 +495,7 @@
                         });
                     }
                 }
+                delete options.current.ado.resourcesAndTypes;
             };            
 
             // define namespace to process
