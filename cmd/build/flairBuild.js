@@ -51,6 +51,17 @@
     const asm_preamble = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_preamble.js'), 'utf8');
     const asm_preamble_line = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_preamble_line.js'), 'utf8');
 
+    // plugins
+    const all_plugins = {
+        docker_image: { cmd: "" },
+        node_modules: cmd: "yarn install --prod" },
+        web_modules: {},
+        copy_files: {},
+        minify_files: {},
+        write_flags: { defaultFlag: "dev" },
+        create_bundle: { minify: true }
+    };
+
     // support functions
     const getFolders = (root, excludeRoot) => {
         const _getFolders = () => {
@@ -1368,21 +1379,35 @@
         const startBuild = (done) => {
             // support functions
             const getPlugins = () => {
+                // inbuilt plugins
                 let plugins = {};
-                for(let p of options.customBuildConfig.plugins) {
-                    plugins[p.name] = {
-                        name: p.name,
-                        settings: Object.assign({}, p.settings),
-                        file: p.file,
-                        exec: null
-                    };
-                    if (!p.file) { // no file defined, means it is an inbuilt plugin
-                        p.file = path.join(__dirname,  'plugins', p.name + '.js'); // same name file as of plugin name
+                for(let p in all_plugins) {
+                    if (all_plugins.hasOwnProperty(p)) {
+                        plugins[p] = {
+                            name: p,
+                            settings: all_plugins[p],
+                            file: path.join(__dirname,  'plugins', p + '.js')
+                        };
+                        plugins[p].exec = require(plugins[p].file).exec;
                     }
-                    if (p.file) {
-                        plugins[p.name].file = p.file;
-                        plugins[p.name].exec = require(p.file).exec;
-                    }
+                }
+
+                // merge add custom plugins
+                if (options.customBuildConfig.plugins) {
+                    for(let cp of options.customBuildConfig.plugins) {
+                        if (!plugins[cp.name]) { // add as is, if this is a custom-plugin
+                            plugins[cp.name] = cp;
+                            plugins[cp].exec = require(plugins[cp].file).exec;
+                        } else { // just merge update settings
+                            if (cp.settings) {
+                                for(let s in cp.settings) {
+                                    if (cp.settings.hasOwnProperty(s)) {
+                                        plugins[cp.name].settings[s] = cp.settings[s];
+                                    }
+                                }
+                            }
+                        }
+                   }
                 }
                 return plugins;
             };

@@ -10,6 +10,8 @@ const doTask = (argv, done) => {
     switch(type) {
         case 'asm': gitProject = 'github:vikasburman/flairjs-template-asm'; break;
         case 'api': gitProject = 'github:vikasburman/flairjs-template-api'; break;
+        case 'client': gitProject = 'github:vikasburman/flairjs-template-client-app'; break;
+        case 'static': gitProject = 'github:vikasburman/flairjs-template-static-app'; break;
         case 'app': gitProject = 'github:vikasburman/flairjs-template-app'; break;
         case 'firebase': gitProject = 'github:vikasburman/flairjs-template-firebase-app'; break;
         default: console.log(`  Unknown type '${type}'`); break;
