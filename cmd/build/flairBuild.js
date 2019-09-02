@@ -54,7 +54,7 @@
     // plugins
     const all_plugins = {
         docker_image: { cmd: "" },
-        node_modules: cmd: "yarn install --prod" },
+        node_modules: { cmd: "yarn install --prod" },
         web_modules: {},
         copy_files: {},
         minify_files: {},

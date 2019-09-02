@@ -13,9 +13,11 @@ const doTask = (argv, done) => {
             console.log('');
             console.log('   type:');
             console.log('       asm      \t flairjs assembly project');
-            console.log('       api      \t flairjs api project');
-            console.log('       app      \t flairjs app project');
-            console.log('       firebase \t flairjs firebase-app project');
+            console.log('       api      \t flairjs server-side only, restful api project');
+            console.log('       client   \t flairjs client-side only, single page app project');
+            console.log('       static   \t flairjs client-side only, static app project');
+            console.log('       app      \t flairjs full stack, single page app project');
+            console.log('       firebase \t flairjs full stack, firebase app project');
             console.log('');
             console.log('Example: flair create app');
             break;
