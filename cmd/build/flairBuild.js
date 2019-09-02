@@ -57,9 +57,9 @@
         node_modules: { cmd: "yarn install --prod" },
         web_modules: {},
         copy_files: {},
-        minify_files: {},
+        minify_files: { gzip: true },
         write_flags: { defaultFlag: "dev" },
-        create_bundle: { minify: true }
+        create_bundle: { minify: true, gzip: true }
     };
 
     // support functions
@@ -1328,7 +1328,11 @@
                         plugin_exec = options.plugins[plugin_name].exec; 
                         if (plugin_exec) {
                             plugin_exec(options.plugins[plugin_name].settings, options, runPlugin);
+                        } else {
+                            runPlugin(); // pick next
                         }
+                    } else {
+                        runPlugin(); // pick next
                     }
                 };
         

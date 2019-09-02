@@ -20,13 +20,18 @@ exports.exec = async function(settings, options, cb) { // eslint-disable no-unus
 
     // minify misc files on dest location
     let src = '',
+        gzFile = '',
         minFile = '';
     for(let toMinifyfile of options.profiles.current.minify) {
         src = path.resolve(path.join(options.profiles.current.dest, toMinifyfile));
         minFile = src.replace('.js', '.min.js');
+        gzFile = minFile + '.gz';
         if (options.clean || options.fullBuild || !fsx.existsSync(minFile)) {
-            options.logger(1, '', toMinifyfile);
             await options.funcs.minifyFile(src);
+            if (settings.gzip && options.gzip && options.gzipConfig) {
+                await options.funcs.gzipFile(minFile);
+            }
+            options.logger(1, '', toMinifyfile);
         } else {
             options.logger(1, '', '[file exists, minify skipped]');
         }
