@@ -1352,10 +1352,65 @@
             options.profiles.current.skipMinify = (typeof options.profiles.current.skipMinify !== 'undefined' ? options.profiles.current.skipMinify : false);
             options.profiles.current.omitRoot = (typeof options.profiles.current.omitRoot !== 'undefined' ? options.profiles.current.omitRoot : false);
             options.profiles.current.modules = options.profiles.current.modules || [];
+            options.profiles.current.bundles = options.profiles.current.bundles || [];
             options.profiles.current.copy = options.profiles.current.copy || [];
             options.profiles.current.minify = options.profiles.current.minify || [];
+            options.profiles.current.flags = options.profiles.current.flags || null;
+            options.profiles.current.docker = options.profiles.current.docker || null;
             options.profiles.current.build = options.profiles.current.build || [];
             
+            // auto-define plugins
+            // if options.profiles.current.plugins is defined as array
+            //  it means use that as is
+            // if not defined at all - or defined as comma delimited string of custom plugins
+            //  it means add these custom plugins after inbuilt plugins
+            let definedPlugins = [],
+                customPlugins = [],
+                autoPlugins = [];
+            if (options.profiles.current.plugins) { // defined
+                if (Array.isArray(options.profiles.current.plugins)) { // array
+                    definedPlugins = options.profiles.current.plugins;
+                } else if (typeof options.profiles.current.plugins === 'string') { // custom plugins
+                    customPlugins = options.profiles.current.plugins.split(',');
+                }
+            } else {
+                if (options.profiles.current.copy.length !== 0) { 
+                    autoPlugins.push('copy_files'); 
+                }
+                if (typeof options.profiles.current.modules === 'boolean') { // server profile
+                    if (options.profiles.current.modules === true) { // modules are needed
+                        autoPlugins.push('node_modules');
+                    }
+                } else { // client profile 
+                    if (options.profiles.current.modules.length !== 0) { // modules are needed
+                        autoPlugins.push('web_modules');
+                    }
+                }
+                if (options.profiles.current.minify.length !== 0) { 
+                    autoPlugins.push('minify_files'); 
+                }    
+                if (options.profiles.current.flags) { 
+                    autoPlugins.push('write_flags'); 
+                }   
+                if (options.profiles.current.bundles.length !== 0) { 
+                    autoPlugins.push('create_bundle'); 
+                }                                              
+                if (options.profiles.current.docker) { 
+                    autoPlugins.push('docker_image');
+                }   
+            }
+            if (definedPlugins.length !== 0) {
+                options.profiles.current.plugins = definedPlugins; // no auto
+            } else {
+                options.profiles.current.plugins = autoPlugins;
+                for(let p of customPlugins) {
+                    p = p.trim();
+                    if (options.profiles.current.plugins.indexOf(p) === -1) { // add if not already added
+                        options.profiles.current.plugins.push(p);
+                    }
+                }
+            }
+ 
             // define source folders to process
             let srcList = [].concat(...options.profiles.current.build);
             options.sources = srcList;
