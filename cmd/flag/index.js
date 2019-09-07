@@ -3,7 +3,7 @@ const path = require('path');
 const readline = require('readline');
 const config = require('../../shared/options.js').config;
 
-const setFlag = (options) => {
+const setFlag = (options, done) => {
     // ask flag name and folders where to flag the build
     const rl = readline.createInterface({
         input: process.stdin,
@@ -11,7 +11,7 @@ const setFlag = (options) => {
     });
     rl.question('   Flag? (dev, prod, <...>): ', (activeFlag) => {
         if (activeFlag) {
-            rl.question(`   Build folders? ${optionsJSON.dest} (<...>,<...>): `, (atFolders) => {
+            rl.question(`   Build folders? ${options.dest}/(<...>,<...>): `, (atFolders) => {
                 let folders = [''];
                 if (atFolders) {
                     folders = atFolders.split(',')
@@ -19,7 +19,7 @@ const setFlag = (options) => {
                 for(let fld of folders) {
                     // update flags.json file for __active field with current active flag
                     fld = fld.trim();
-                    let fileName = path.join(optionsJSON.dest, fld, 'flags.json'),
+                    let fileName = path.join(options.dest, fld, 'flags.json'),
                         flags = null,
                         oldFlag = '',
                         content = '';
@@ -41,9 +41,11 @@ const setFlag = (options) => {
 
                 // done
                 rl.close();
+                done();
             });
         } else {
             rl.close();
+            done();
         }
     });
 };
@@ -58,14 +60,13 @@ const doTask = (argv, done) => {
     }
 
     // set flag
-    console.log('flairFlag: (start)');
-    setFlag(options);
-    console.log('flairFlag: (end)');
-
-    // done
-    done();
+    setFlag(options, done);
 };
 
 exports.run = function(argv, cb) {
-    doTask(argv, cb);
+    console.log('flairFlag: (start)');
+    doTask(argv, () => {
+        console.log('flairFlag: (end)');
+        cb();
+    });
 };
