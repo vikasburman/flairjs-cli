@@ -1,20 +1,9 @@
 const fsx = require('fs-extra');
 const path = require('path');
 const readline = require('readline');
+const config = require('../../shared/options.js').config;
 
-// do
-const doTask = (argv, done) => {
-    // change active flag of current build in dest
-    let options = argv.options || '',
-        optionsJSON = null
-    if (!options) {
-        console.log('Build options definition is not configured. Use --options <file> to define.'); // eslint-disable-line no-console
-        done(); return;
-    }
-
-    // load options
-    optionsJSON = fsx.readJSONSync(options, 'utf8');    
-
+const setFlag = (options) => {
     // ask flag name and folders where to flag the build
     const rl = readline.createInterface({
         input: process.stdin,
@@ -52,19 +41,31 @@ const doTask = (argv, done) => {
 
                 // done
                 rl.close();
-                done();
             });
         } else {
             rl.close();
-            done();
         }
     });
 };
 
-exports.run = function(argv, cb) {
+// do
+const doTask = (argv, done) => {
+    // change active flag of current build in dest
+    let options = config(argv.options, 'build');
+    if (!options) {
+        console.log('Build options definition is not configured.');  // eslint-disable-line no-console
+        done(); return;
+    }
+
+    // set flag
     console.log('flairFlag: (start)');
-    doTask(argv, () => {
-        console.log('flairFlag: (end)');
-        cb();
-    });
+    setFlag(options);
+    console.log('flairFlag: (end)');
+
+    // done
+    done();
+};
+
+exports.run = function(argv, cb) {
+    doTask(argv, cb);
 };

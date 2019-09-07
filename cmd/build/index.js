@@ -1,30 +1,28 @@
 const fsx = require('fs-extra');
+const config = require('../../shared/options.js').config;
+const flairBuild = require('./flairBuild.js');
 
 // do
 const doTask = (argv, done) => {
     // get options file
-    let options = argv.options || '',
+    let options = config(argv.options, 'build'),
         flag = argv.flag || '',
         forcedFullBuild = argv.full,
-        forcedQuickBuild = argv.quick,
-        optionsJSON = null;
+        forcedQuickBuild = argv.quick;
     if (!options) {
-        console.log('Build options definition is not configured. Use --options <file> to define.'); // eslint-disable-line no-console
+        console.log('Build options definition is not configured.');  // eslint-disable-line no-console
         done(); return;
     }
 
-    // load options
-    optionsJSON = fsx.readJSONSync(options, 'utf8');
-    if (forcedFullBuild) { optionsJSON.fullBuild = true; }
-    if (forcedQuickBuild && !forcedFullBuild) { optionsJSON.quickBuild = true; }
+    // modify options for given flags
+    if (forcedFullBuild) { options.fullBuild = true; }
+    if (forcedQuickBuild && !forcedFullBuild) { options.quickBuild = true; }
     if (flag) { // active flag defined
-        optionsJSON.activeFlag = flag;
+        options.activeFlag = flag;
     }
 
-    // load and run engine
-    let engine = require.resolve('flairjs-cli/cmd/build/flairBuild.js');
-    let flairBuild = require(engine);
-    flairBuild(optionsJSON, done);
+    // run build
+    flairBuild(options, done);
 };
 
 exports.run = function(argv, cb) {

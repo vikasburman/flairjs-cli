@@ -2,11 +2,12 @@ const path = require('path');
 const fsx = require('fs-extra');
 const del = require('del');
 const copyDir = require('copy-dir');
+const config = require('../../shared/options.js').config;
 
 const delAll = (root) => {
     del.sync([root + '/**', '!' + root]);
 };
-const NPM = (argv, options) => {
+const NPMPackage = (options) => {
     let dest = path.join(path.resolve(options.dest), 'npm');
     
     console.log('   package: npm (start)');
@@ -46,27 +47,24 @@ const NPM = (argv, options) => {
 // do
 const doTask = (argv, done) => {
     // get options file
-    let options = argv.options || '',
-        optionsJSON = null;
+    let options = config(argv.options, 'pack');
     if (!options) {
-        console.log('Package options definition is not configured. Use --options <file> to define.'); // eslint-disable-line no-console
-        return;
+        console.log('Pack options definition is not configured.');  // eslint-disable-line no-console
+        done(); return;
     }
 
-    // load options
-    optionsJSON = fsx.readJSONSync(options, 'utf8');
-
     // process each supported type of packaging
-    NPM(argv, optionsJSON.npm);
+    console.log('flairPack: (start)');
+    if (options.npm) {
+        let npmOptions = config(options, 'pack', 'npm');
+        NPMPackage(npmOptions);
+    }
+    console.log('flairPack: (end)');
 
     // done
     done();
 };
 
 exports.run = function(argv, cb) {
-    console.log('flairPack: (start)');
-    doTask(argv, () => {
-        console.log('flairPack: (end)');
-        cb();
-    });
+    doTask(argv, cb);
 };

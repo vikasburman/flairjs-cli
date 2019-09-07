@@ -1124,7 +1124,7 @@
             options.current.asmPath = './' + path.join(options.current.src, options.current.asmName);
             options.current.asm = './' + path.join(options.current.dest, options.current.asmName + '.js');
             options.current.asmFileName = ('./' + path.join(options.current.dest, options.current.asmName) + '.js').replace(options.dest, '.');
-            if (options.customBuild && options.profiles.current.omitRoot) {
+            if (options.custom && options.profiles.current.omitRoot) {
                 options.current.asmFileName = options.current.asmFileName.replace(options.profiles.current.destRoot, '');
             }
             options.current.asmMain = './' + path.join(options.current.src, options.current.asmName, 'index.js');
@@ -1248,21 +1248,21 @@
             let source = options.sources.splice(0, 1)[0]; // pick from top
             let currentBuild = source;
             if (source.startsWith('_')) { processSources(done); return; } // ignore if starts with '_'
-            if (options.customBuild) { source = path.join(options.profiles.current.root, source); }
+            if (options.custom) { source = path.join(options.profiles.current.root, source); }
     
             // source group (start)
             logger(0, 'group', `${source.replace(options.src, '.')} (start)`, true);  
             options.current = {};
-            options.current.build = (options.customBuild ? currentBuild : '');
-            options.current.src = options.customBuild ? ('./' + path.join(options.src, source)) : source;
+            options.current.build = (options.custom ? currentBuild : '');
+            options.current.src = options.custom? ('./' + path.join(options.src, source)) : source;
             options.current.dest = options.current.src.replace(options.src, options.dest);
-            if (options.customBuild) {
+            if (options.custom) {
                 options.current.dest = options.current.dest.replace(options.dest , options.profiles.current.dest); 
                 options.current.dest = options.current.dest.replace(options.profiles.current.root + '/', '');
             }
             options.current.adosJSON = [];
             options.current.preamble = './' + path.join(options.current.dest, 'preamble.js');
-            options.current.skipMinify = options.customBuild ? options.profiles.current.skipMinify : false;
+            options.current.skipMinify = options.custom ? options.profiles.current.skipMinify : false;
     
             // process assemblies under this group
             options.current.assemblies = getFolders(options.current.src, true);
@@ -1285,7 +1285,7 @@
     
             // support functions
             const getProfileTarget = (profileName) => {
-                let theProfile = options.customBuildConfig.profiles[profileName],
+                let theProfile = options.customConfig.profiles[profileName],
                     target = '';
                 if (theProfile.dest && theProfile.dest !== '') {
                     if (theProfile.dest === '/') { 
@@ -1303,7 +1303,7 @@
                 return target;
             };
             const runPlugins = (cb) => {
-                if (!options.customBuild) { cb(); return; }
+                if (!options.custom) { cb(); return; }
         
                 // expose functions for plugins
                 options.funcs = {
@@ -1342,7 +1342,7 @@
 
             // define profile to process
             let profileItem = options.profiles.splice(0, 1)[0]; // pick from top
-            options.profiles.current = Object.assign({}, options.customBuildConfig.profiles[profileItem.profile]); // use a copy
+            options.profiles.current = Object.assign({}, options.customConfig.profiles[profileItem.profile]); // use a copy
 
             // set defaults for profile
             options.profiles.current.root = options.profiles.current.root || profileItem.profile;
@@ -1397,8 +1397,8 @@
                 }
 
                 // merge add custom plugins
-                if (options.customBuildConfig.plugins) {
-                    for(let cp of options.customBuildConfig.plugins) {
+                if (options.customConfig.plugins) {
+                    for(let cp of options.customConfig.plugins) {
                         if (!plugins[cp.name]) { // add as is, if this is a custom-plugin
                             plugins[cp.name] = cp;
                             plugins[cp].exec = require(plugins[cp].file).exec;
@@ -1416,12 +1416,12 @@
                 return plugins;
             };
 
-            if (options.customBuild) { // custom build
+            if (options.custom) { // custom build
                 // define plugins
                 options.plugins = getPlugins();
         
                 // define profiles to process
-                options.profiles = options.customBuildConfig.build.slice();
+                options.profiles = options.customConfig.build.slice();
                 options.profiles.current = null;
 
                 // process profiles
@@ -1459,11 +1459,11 @@
      *              activeFlag: flag that needs to be marked as active in when flags are written (see write_flajs.js for more info) - this is generally passed from command line as arg
      *              src: source folder root path
      *              dest: destination folder root path - where to copy built assemblies
-     *              customBuild: if custom control is needed for picking source and other files
+     *              custom: if custom control is needed for picking source and other files
      *                  true - all root level folders under 'src' will be treated as one individual assembly
      *                      Note: if folder name starts with '_', it is skipped
      *                  false - customization can be done using a config
-     *              customBuildConfig: custom folders configuration options file path, having structure
+     *              customConfig: custom folders configuration options file path (or object), having structure
      *              {
      *                  "build": [
      *                      {
@@ -1506,7 +1506,7 @@
      *              skipBumpVersion: true/false - if skip bump version with build
      *              suppressLogging: true/false  - if build time log is to be shown on terminal
      *              lint: true/false - if lint operation is to be executed
-     *              lintConfig: lint configuration options file path, having structure
+     *              lintConfig: lint configuration options file path (or object), having structure
      *              {
      *                  "js": { NOTE: Option configuration comes from: https://eslint.org/docs/user-guide/configuring AND https://eslint.org/docs/developer-guide/nodejs-api#cliengine
      *                  },
@@ -1517,7 +1517,7 @@
      *              }
      *              lintTypes: - what all types to run linting on - ["js", "css", "html"]
      *              minify: true/false   - is minify to be run
-     *              minifyConfig - minify configuration options file path having structure
+     *              minifyConfig - minify configuration options file path (or object), having structure
      *              {
      *                  "js": { NOTE: Option configuration comes from: https://github.com/mishoo/UglifyJS2/tree/harmony
      *                  },
@@ -1529,7 +1529,7 @@
      *              minifyTypes: - what all types to run minification on - ["js", "css", "html"]
      *              generateJSSourceMap: true/false - if source map to be generated for js files
      *              gzip: true/false     - is gzip to be run
-     *              gzipConfig - gzip configuration options file path having structure
+     *              gzipConfig - gzip configuration options file path (or object), having structure
      *              {
      *                  "all": {
      *                  },
@@ -1548,7 +1548,8 @@
      *              lintResources: true/false   - if resources are to be linted before bundeling
      *              minifyResources: true/false - if resources are to be minified before bundeline
      *              utf8EncodeResourceTypes: for what type of resources utf8 encoding can be done - ["txt", "xml", "js", "md", "json", "css", "html", "svg"]
-     *              depsConfig - dependencies pull/push configuration options file path having structure
+     *              deps: true/false
+     *              depsConfig - dependencies pull/push configuration options file path (or object), having structure
      *              {
      *                  pre:[] - each item in here should have structure as: { src, dest }
      *                           NOTE:
@@ -1705,19 +1706,20 @@
      * @returns void
      */ 
     const flairBuild = function(options, cb) {
+        const config = require('../../shared/options.js').config;
+
         // build options
         options = options || {};
-        options.engine = options.engine || '';
         options.package = options.package || './package.json';
 
         options.dest = options.dest || './dist';
         options.src = options.src || './src';
         options.cache = options.cache || './temp';
     
-        options.customBuild = options.customBuild || false; 
-        options.customBuildConfig = options.customBuildConfig || '';
+        options.custom = options.custom || false; 
+        options.customConfig = config(options, 'build', 'custom');
 
-        options.packaged = options.customBuild ? false : (options.packaged || false);
+        options.packaged = options.custom ? false : (options.packaged || false);
         
         options.fullBuild = options.fullBuild || false;
         options.quickBuild = (!options.fullBuild && options.quickBuild) || false;
@@ -1726,16 +1728,16 @@
         options.suppressLogging = options.suppressLogging || false;
 
         options.lint = options.lint !== undefined ? options.lint : true;
-        options.lintConfig = options.lintConfig || '';
+        options.lintConfig = config(options, 'build', 'lint');
         options.lintTypes = options.lintTypes || ["js", "css", "html"];
 
         options.minify = options.minify !== undefined ? options.minify : true;
-        options.minifyConfig = options.minifyConfig || '';
+        options.minifyConfig = config(options, 'build', 'minify');
         options.minifyTypes = options.minifyTypes || ["js", "css", "html"];
         options.generateJSSourceMap = options.generateJSSourceMap !== undefined ? options.generateJSSourceMap : false;
 
         options.gzip = options.gzip || false;
-        options.gzipConfig = options.gzipConfig || '';
+        options.gzipConfig = config(options, 'build', 'gzip');
         options.gzipTypes = options.gzipTypes || ["js", "css", "html", "txt", "xml", "md", "json", "svg", "jpg", "jpeg", "gif", "png"];
 
         options.lintAssets = options.lintAssets || false;    
@@ -1746,9 +1748,10 @@
         options.minifyResources = options.minifyResources !== undefined ? options.minifyResources : true;
         options.utf8EncodeResourceTypes = options.utf8EncodeResourceTypes || ["txt", "xml", "js", "md", "json", "css", "html", "svg"];
 
-        options.depsConfig = options.depsConfig || '';
-        options.preBuildDeps = options.preBuildDeps || false;    
-        options.postBuildDeps = options.postBuildDeps || false;
+        options.deps = options.deps || false;
+        options.depsConfig = config(options, 'build', 'deps');
+        options.preBuildDeps = (options.depsConfig && options.preBuildDeps) || false;    
+        options.postBuildDeps = (options.depsConfig && options.postBuildDeps) || false;
 
         // full-build vs quick build vs default build settings
         if (options.fullBuild) { // full build - ensure these things happen, if configured, even if turned off otherwise
@@ -1756,8 +1759,6 @@
             options.lint = options.lintConfig ? true : false;
             options.minify = options.minifyConfig ? true : false;
             options.gzip = options.gzipConfig ? true : false;
-            options.preBuildDeps = options.depsConfig ? true : false;
-            options.postBuildDeps = options.depsConfig ? true : false;
             options.lintResources = options.lint && options.lintResources;
             options.minifyResources = options.minify && options.minifyResources;
             options.minifyAssets = options.minify && options.minifyAssets;
@@ -1786,13 +1787,8 @@
         options.skipMinifyFor = [
         ];        
 
-        // process options with their resolved values
+        // package json
         options.packageJSON = fsx.readJSONSync(path.resolve(options.package));
-        options.lintConfig = options.lintConfig ? fsx.readJSONSync(path.resolve(options.lintConfig)) : null;
-        options.minifyConfig = options.minifyConfig ? fsx.readJSONSync(path.resolve(options.minifyConfig)) : null;
-        options.gzipConfig = options.gzipConfig ? fsx.readJSONSync(path.resolve(options.gzipConfig)) : null;
-        options.depsConfig = options.depsConfig ? fsx.readJSONSync(path.resolve(options.depsConfig)) : null;
-        options.customBuildConfig = options.customBuildConfig ? fsx.readJSONSync(path.resolve(options.customBuildConfig)) : null;
 
         // lint
         if (options.lint && options.lintConfig) {
