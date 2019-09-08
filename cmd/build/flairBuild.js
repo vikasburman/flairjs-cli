@@ -883,32 +883,6 @@
                 // inject ado
                 options.current.asmContent = replaceAll(options.current.asmContent, '<<ado>>', JSON.stringify(options.current.ado));
             };
-            // const giveAutoNamespaceToType = (content, nsName) => {
-            //     if (content.indexOf('(auto)') !== -1) {
-            //         content = replaceAll(content, `$$('ns', '(auto)');`, `$$$('ns', '${nsFile.nsName}');`); // replace all is eating up one '$', soo added 3, 2 left after that issues
-            //         content = replaceAll(content, `$$("ns", "(auto)");`, `$$$("ns", "${nsFile.nsName}");`); // replace all is eating up one '$', soo added 3, 2 left after that issues
-            //     }
-            //     return content;
-            // };
-            // const giveAutoNameToType = (content, nsName) => {
-            //     if (content.indexOf('(auto)') !== -1) {
-            //         content = replaceAll(content, `Class('(auto)'`, `Class('${nsFile.typeName}'`);
-            //         content = replaceAll(content, `Class("(auto)"`, `Class("${nsFile.typeName}"`);
-        
-            //         content = replaceAll(content, `Struct('(auto)'`, `Struct('${nsFile.typeName}'`);
-            //         content = replaceAll(content, `Struct("(auto)"`, `Struct("${nsFile.typeName}"`);
-        
-            //         content = replaceAll(content, `Mixin('(auto)'`, `Mixin('${nsFile.typeName}'`);
-            //         content = replaceAll(content, `Mixin("(auto)"`, `Mixin("${nsFile.typeName}"`);
-        
-            //         content = replaceAll(content, `Enum('(auto)'`, `Enum('${nsFile.typeName}'`);
-            //         content = replaceAll(content, `Enum("(auto)"`, `Enum("${nsFile.typeName}"`);
-        
-            //         content = replaceAll(content, `Interface('(auto)'`, `Interface('${nsFile.typeName}'`);
-            //         content = replaceAll(content, `Interface("(auto)"`, `Interface("${nsFile.typeName}"`);
-            //     }
-            //     return content;
-            // };            
             const giveNamespaceAndNameToType = (content, nsName, typeName) => {
                 // find and add typename and namespace to first type in file, if matches 
                 // to auto add typeName, it can be written as:
@@ -918,17 +892,18 @@
                 // Mixin('', <whatever>)
                 // Enum('', <whatever>)
                 // Interface('', <whatever>)
-                let rex = /((Class)|(Struct)|(Mixin)|(Enum)|(Interface))\s*\(\s*(""|'')\s*\,/g
+                let rex = /((Class)|(Struct)|(Mixin)|(Enum)|(Interface))\s*\(\s*(""|'')\s*\,/
                 let mtc = content.match(rex);
-                if (mtc && mtc.index >= 0 && mtc.length > 0) {
-                    let pre = content.substr(0, mtc.index) + `$$('ns', '${nsName}'); `;
-                    let post = content.substr(mtc.index + mtc.length + 1);
-                    let middle = content.substr(mtc.index, mtc.length + 1);
-                    if (middle.indexOf('""') !== -1) { middle = middle.replace('""', "''");
-                    content = pre + middle.replace("''", `'${typeName}'`) + post;
+                if (mtc) {
+                    let middle = mtc[0];
+                    let pre = content.substr(0, mtc.index) + `$$$('ns', '${nsName}');\n`; // using $$$, because one $ gets eaten in replace
+                    let post = content.substr(mtc.index + middle.length + 1);
+                    if (middle.indexOf('""') !== -1) { middle = middle.replace('""', "''"); }
+                    content = pre + `\t\t` + middle.replace("''", `'${typeName}' `) + post;
                 }
                 return content;
             };
+
             const injectTypes = (cb) => {
                 if (options.current.ado.types.length === 0) { 
                     options.current.asmContent = replaceAll(options.current.asmContent, '<<asm_types>>', '// (not defined)');
