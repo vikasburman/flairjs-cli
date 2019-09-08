@@ -899,7 +899,7 @@
                     let pre = content.substr(0, mtc.index) + `$$$('ns', '${nsName}');\n`; // using $$$, because one $ gets eaten in replace
                     let post = content.substr(mtc.index + middle.length + 1);
                     if (middle.indexOf('""') !== -1) { middle = middle.replace('""', "''"); }
-                    content = pre + `\t\t` + middle.replace("''", `'${typeName}' `) + post;
+                    content = pre + `\t\t` + middle.replace("''", `'${typeName}'`) + ' ' + post;
                 }
                 return content;
             };
