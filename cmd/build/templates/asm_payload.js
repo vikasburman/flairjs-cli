@@ -1,4 +1,4 @@
-// assembly closure init (start)
+// assembly closure: init (start)
 /* eslint-disable no-unused-vars */
 
 // flair types, variables and functions
@@ -11,11 +11,6 @@ const { env } = flair.options;
 const { guid, stuff, replaceAll, splitAndTrim, findIndexByProp, findItemByProp, which, isArrowFunc, isASyncFunc, sieve,
         deepMerge, getLoadedScript, b64EncodeUnicode, b64DecodeUnicode, lens, globalSetting } = flair.utils;
 
-// inbuilt modifiers and attributes compile-time-safe support
-const { $$static, $$abstract, $$virtual, $$override, $$sealed, $$private, $$privateSet, $$protected, $$protectedSet, $$readonly, $$async,
-        $$overload, $$enumerate, $$dispose, $$post, $$on, $$timer, $$type, $$args, $$inject, $$resource, $$asset, $$singleton, $$serialize,
-        $$deprecate, $$session, $$state, $$conditional, $$noserialize, $$ns } = $$;
-
 // access to DOC
 const DOC = ((env.isServer || env.isWorker) ? null : window.document);
 
@@ -27,7 +22,7 @@ AppDomain.loadPathOf('<<asm>>', __currentPath);
 
 // settings of this assembly
 let settings = JSON.parse('<<settings>>');
-let settingsReader = flair.Port('settingsReader');
+let settingsReader = Port('settingsReader');
 if (typeof settingsReader === 'function') {
     let externalSettings = settingsReader('<<asm>>');
     if (externalSettings) { settings = deepMerge([settings, externalSettings], false); }
@@ -39,22 +34,22 @@ let config = JSON.parse('<<config>>');
 config = Object.freeze(config);
 
 /* eslint-enable no-unused-vars */
-// assembly closure init (end)
+// assembly closure: init (end)
 
-// assembly global functions (start)
+// assembly closure: global functions (start)
 <<asm_functions>>
-// assembly global functions (end)
+// assembly closure: global functions (end)
 
 // set assembly being loaded
 AppDomain.context.current().currentAssemblyBeingLoaded('<<which_file>>');
 
-// assembly types (start)
+// assembly closure: types (start)
 <<asm_types>>
-// assembly types (end)
+// assembly closure: types (end)
 
-// assembly embedded resources (start)
+// assembly closure: embedded resources (start)
 <<asm_resources>>
-// assembly embedded resources (end)        
+// assembly closure: embedded resources (end)        
 
 // clear assembly being loaded
 AppDomain.context.current().currentAssemblyBeingLoaded();
