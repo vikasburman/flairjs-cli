@@ -512,8 +512,6 @@
                         collectInPlaceNSAsset(file, file.replace('.data.', '.'), 'data'); continue; // file collected as asset - don't process further
                     } else if (file.endsWith('.style.' + nsFile.ext)) { // special known asset type
                         collectInPlaceNSAsset(file, file.replace('.style.', '.'), 'css'); continue; // file collected as asset - don't process further
-                    } else if (file.endsWith('.content.' + nsFile.ext)) { // special known asset type
-                        collectInPlaceNSAsset(file, file.replace('.content.', '.'), 'content'); continue; // file collected as asset - don't process further
                     }
 
                     // specs
@@ -531,7 +529,7 @@
                     } else if (file.endsWith('.res.' + nsFile.ext)) { // resource
                         nsFile.typeName = path.basename(file).replace('.res.' + nsFile.ext, '');
                         nsFile.type = 'res';
-                    } else if (['html', 'css', 'json', 'xml', 'md'].indexOf(nsFile.ext) !== -1) { // special known resources
+                    } else if (['html', 'css', 'json'].indexOf(nsFile.ext) !== -1) { // special known resources
                         nsFile.typeName = path.basename(file).replace('.' + nsFile.ext, '_' + nsFile.ext); // "Footer.html" will become "Footer_html" typename
                         nsFile.type = 'res';
                     } else { // anything else
@@ -1848,15 +1846,14 @@
      *                                  > name of these files is updated as 
      *                                    (1) .ast. is removed and 
      *                                    (2) namespace where these in-place assets are placed is prefixed to filename
-     *                             *.[view|layout|style|data|content] - in-place namespaced known asset type files
-     *                                  > all files that ends with .[view|layout|style|data|content].<ext> will be copied to assembly's root asset folder under special folders as:
+     *                             *.[view|layout|style|data] - in-place namespaced known asset type files
+     *                                  > all files that ends with .[view|layout|style|data].<ext> will be copied to assembly's root asset folder under special folders as:
      *                                      .view.* (generally .view.html) goes to (assets)/views/ folder
      *                                      .layout.* (generally .layout.html) goes to (assets)/layouts/ folder
      *                                      .style.* (generally .style.css) goes to (assets)/css/ folder
      *                                      .data.* (generally .data.json) goes to (assets)/data/ folder
-     *                                      .content.* (generally .content.md) goes to (assets)/content/ folder
      *                                  > name of these files is updated as 
-     *                                    (1) .[view|layout|style|data|content]. is removed and 
+     *                                    (1) .[view|layout|style|data]. is removed and 
      *                                    (2) namespace where these in-place known assets are placed is prefixed to filename
      *                          NOTE: Any other file, that does not map to identified types above are skipped,    
      *                                therefore files like *.spec.js or *.mjs, all are skipped 
