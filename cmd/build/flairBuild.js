@@ -406,12 +406,62 @@
                 if (rootNS && isAddDot) { rootNS += '.'; }
                 return rootNS;
             };
+            const collectNSAssets = (nsaSrc, nsName) => {
+                // NOTE: This method should be in sync with collectAssets, as both doing similar things in different comtext
+                let assetsInfo = [],
+                    astSrc = nsaSrc,
+                    astDest = './' + path.join(options.current.dest, options.current.asmName);
+            
+                if (fsx.existsSync(astSrc)) {
+                    let assets = rrd(astSrc);
+                    for (let asset of assets) {
+                        if (asset.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
+                        
+                        // asset file info
+                        let till_nsa = asset.substr(0, asset.indexOf('/(nsa)/') + 7), // pick from start till where /(nsa)/ ends
+                            astFileName = path.basename(asset);
+                        let astFile = {
+                            ext: path.extname(asset).toLowerCase().substr(1),
+                            src: './' + asset,
+                            dest: path.join(astDest, asset.replace(till_nsa, '').replace(astFileName, nsName + '.' + astFileName))
+                        };
+                        assetsInfo.push(astFile);
+                    }
+                }
+
+                // done
+                return assetsInfo;
+            };     
+            const collectInPlaceNSAsset = (file, destFile, knownTypeFolder) => {
+                // NOTE: This structure being pushed to nsAssets array - should be in sync with how it is in collectAssets and collectNSAssets
+                let inPlaceAstDest = './' + path.join(options.current.dest, options.current.asmName),
+                    nsName = options.current.nsName;
+                options.current.nsAssets.push([
+                    {
+                        ext: path.extname(file).toLowerCase().substr(1),
+                        src: file,
+                        dest: path.join(inPlaceAstDest, knownTypeFolder, nsName + '.' + path.basename(destFile))
+                    }
+                ]);
+            };
             const collectTypesAndResourcesAndRoutes = () => {
-                let files = rrd(options.current.nsPath);
+                let files = rrd(options.current.nsPath),
+                    processedNSAs = [],
+                    till_nsa = '';
                 options.current.ado.resourcesAndTypes = [];
                 for (let file of files) { 
                     if (file.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
-        
+                    
+                    // collect nsa assets for this nsa folder
+                    if (file.indexOf('/(nsa)/') !== -1) { 
+                        till_nsa = file.substr(0, file.indexOf('/(nsa)/') + 7); // pick from start till where /(nsa)/ ends
+                        if (processedNSAs.indexOf(till_nsa) === -1) { // process this nsa folder, if not already processed
+                            let assetsInfo = collectNSAssets(till_nsa, options.current.nsName); 
+                            options.current.nsAssets.push(assetsInfo); // puth collect assets array as element in this array
+                            continue; // skip collecting types resources or assets from this special folder inside namespace (at any level inside)
+                        } // else ignore the file, as it must have already been processed as asset
+                    }
+
                     // handle position first
                     let lastIndex = 999999999, 
                         index = lastIndex, // all are at bottom by default
@@ -447,12 +497,31 @@
                         ext: path.extname(file).toLowerCase().substr(1),
                         originalFile: originalFile,
                         file: file,
+                        type: '',
                         index: index
                     };
                     
+                    // in-place assets
+                    if (file.endsWith('.ast.' + nsFile.ext)) { // in-place asset
+                        collectInPlaceNSAsset(file, file.replace('.ast.', '.'), ''); continue; // file collected as asset - don't process further
+                    } else if (file.endsWith('.view.' + nsFile.ext)) { // special known asset type
+                        collectInPlaceNSAsset(file, file.replace('.view.', '.'), 'views'); continue; // file collected as asset - don't process further
+                    } else if (file.endsWith('.layout.' + nsFile.ext)) { // special known asset type
+                        collectInPlaceNSAsset(file, file.replace('.layout.', '.'), 'layouts'); continue; // file collected as asset - don't process further
+                    } else if (file.endsWith('.data.' + nsFile.ext)) { // special known asset type
+                        collectInPlaceNSAsset(file, file.replace('.data.', '.'), 'data'); continue; // file collected as asset - don't process further
+                    } else if (file.endsWith('.style.' + nsFile.ext)) { // special known asset type
+                        collectInPlaceNSAsset(file, file.replace('.style.', '.'), 'css'); continue; // file collected as asset - don't process further
+                    } else if (file.endsWith('.content.' + nsFile.ext)) { // special known asset type
+                        collectInPlaceNSAsset(file, file.replace('.content.', '.'), 'content'); continue; // file collected as asset - don't process further
+                    }
+
+                    // specs
+                    if (file.endsWith('.spec.js')) { continue; } // ignore specs
+                        
+                    // routes.json, types and resources
                     if (file.endsWith('/routes.json')) { // routes definition
                         nsFile.type = 'routes';
-                    } else if (file.endsWith('.spec.js')) { continue; // ignore specs
                     } else if (file.endsWith('.res.js')) { // js as a resource
                         nsFile.typeName = path.basename(file).replace('.res.js', '');
                         nsFile.type = 'res';
@@ -462,8 +531,14 @@
                     } else if (file.endsWith('.res.' + nsFile.ext)) { // resource
                         nsFile.typeName = path.basename(file).replace('.res.' + nsFile.ext, '');
                         nsFile.type = 'res';
+                    } else if (['html', 'css', 'json', 'xml', 'md'].indexOf(nsFile.ext) !== -1) { // special known resources
+                        nsFile.typeName = path.basename(file).replace('.' + nsFile.ext, '_' + nsFile.ext); // "Footer.html" will become "Footer_html" typename
+                        nsFile.type = 'res';
+                    } else { // anything else
+                        continue; // ignore any other type of file
                     }
-                    if (nsFile.type !== 'routes') {
+
+                    if (nsFile.type !== 'routes') { // type or resource
                         if (nsFile.typeName.indexOf('.') !== -1) { throw `Type/Resource names cannot contain dots. (${options.current.nsName}.${nsFile.typeName})`; }
                         nsFile.qualifiedName = (options.current.nsName !== '(root)' ? options.current.nsName + '.' : resolveRootNS(true))  + nsFile.typeName;
 
@@ -648,6 +723,7 @@
                 }
             };
             const collectAssets = () => {
+                // NOTE: This method should be in sync with collectNSAssets, as both doing similar things in different comtext
                 let assetsInfo = [],
                     astSrc = './' + path.join(options.current.asmPath, '(assets)'),
                     astDest = './' + path.join(options.current.dest, options.current.asmName);
@@ -664,6 +740,17 @@
                             dest: path.join(astDest, asset.replace(astSrc.replace('./', ''), ''))
                         };
                         assetsInfo.push(astFile);
+                    }
+                }
+
+                // merge all options.current.nsAssets items into assetsInfo
+                for(let nsAssetsInfo of options.current.nsAssets) {
+                    for(let nsAstFile of nsAssetsInfo) {
+                        // check for duplicate file name at dest
+                        if (assetsInfo.findIndex(item => { return (item.dest === nsAstFile.dest ? true : false); }) !== -1) {
+                            throw `Asset is already added. (${nsAstFile.src})`; 
+                        }
+                        assetsInfo.push(nsAstFile);
                     }
                 }
 
@@ -1013,7 +1100,7 @@
                     thisRes = replaceAll(thisRes, '<<file>>', rdo.file);
         
                     // append content to all list
-                    allResources += thisRes + '\n';
+                    allResources += thisRes;
 
                     // pick next
                     injectResources(cb, justNames, allResources);
@@ -1150,10 +1237,12 @@
 
                 // process namespaces under this assembly 
                 options.current.namespaces = getFolders(options.current.asmPath, true);
+                options.current.nsAssets = []; // this will be an array of arrays - each item contains an array of nsAssets - for each found (nsa) folder anywhere inside namespace folder (at any level inside there)
                 processNamespaces(() => { 
 
                     // process assets of the assembly
                     options.current.ado.assets = collectAssets();
+                    delete options.current.nsAssets; // nsAssets are merged in main assets by now
                     processAssets(() => {
                         // copy libs over assets (this will overwrite, if there are same name files in assets and libs)
                         copyLibs();
@@ -1712,6 +1801,10 @@
      *                              following types of files are processed as per associated rules:
      *                              _*              - any file name that starts with '_' is skipped
      *                              <_*>            - any folder name that starts with '_' is skipped all together
+     *                              (nsa)           - this is a special folder called: namespaced assets
+     *                                                content of this folder is merged with (assets) content at assembly level
+     *                                                additionally ALL files under it are copied after prefixing their name with the namespace name
+     *                                                so a file: (nsa)\views\Header.html --will go as--> (assets)\views\<namespaceName>.Home.html
      *                              *.js            - assumed to be flair types, following are rules associated with this
      *                                  > it will be looked for "<!-- inject: relative path here -->" pattern
      *                                    and defined js file will be injected in-place
@@ -1746,6 +1839,25 @@
      *                                  > each resource will therefore can be accessed via flair.getResource('<namespace>.<filename>') name
      *                                    Note: .res. will be removed from the file name
      *                                  > File name is now allowed to have any dots
+     *                                  > html, css, xml, json, md are 5 special files that are not needed to have '.res.' in their file name to be treated as 
+     *                                    resource, these are automatically be picked as resource - but in this case when they do not carry .res., their name is
+     *                                    defined as: Header.html --is registered as--> '<namespaceName>.Header_html'
+     *                                    while Header.res.html --will be registered as--> '<namespaceName.Header'
+     *                             *.ast.[*] - in-place namespaced asset files
+     *                                  > all files that ends with .ast.<ext> will be copied to assembly's root asset folder
+     *                                  > name of these files is updated as 
+     *                                    (1) .ast. is removed and 
+     *                                    (2) namespace where these in-place assets are placed is prefixed to filename
+     *                             *.[view|layout|style|data|content] - in-place namespaced known asset type files
+     *                                  > all files that ends with .[view|layout|style|data|content].<ext> will be copied to assembly's root asset folder under special folders as:
+     *                                      .view.* (generally .view.html) goes to (assets)/views/ folder
+     *                                      .layout.* (generally .layout.html) goes to (assets)/layouts/ folder
+     *                                      .style.* (generally .style.css) goes to (assets)/css/ folder
+     *                                      .data.* (generally .data.json) goes to (assets)/data/ folder
+     *                                      .content.* (generally .content.md) goes to (assets)/content/ folder
+     *                                  > name of these files is updated as 
+     *                                    (1) .[view|layout|style|data|content]. is removed and 
+     *                                    (2) namespace where these in-place known assets are placed is prefixed to filename
      *                          NOTE: Any other file, that does not map to identified types above are skipped,    
      *                                therefore files like *.spec.js or *.mjs, all are skipped 
      *      
