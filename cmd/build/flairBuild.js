@@ -768,7 +768,7 @@
                     astFileDest = astFile.dest,
                     astFileDestMin = '';
                 if (!astFileDest.startsWith('./')) { astFileDest = './' + astFileDest; }
-                astFileDest = astFileDest.replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
+                astFileDest = astFileDest.replace('/' + options.current.build, '').replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
                 astFileDestMin = astFileDest.replace('.' + astFile.ext, '{.min}.' + astFile.ext);
                 
                 if (options.minify && !options.current.skipMinify && !options.current.skipMinifyThisAssembly) {    
@@ -882,7 +882,7 @@
                         // and these are throwing error too when exist
                         let libFileDest = libFile.dest;
                         if (!libFileDest.startsWith('./')) { libFileDest = './' + libFileDest; }
-                        libFileDest = libFileDest.replace(options.dest, '').replace(options.current.ado.name, '').replace('//', '');
+                        libFileDest = libFileDest.replace('/' + options.current.build, '').replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
                         options.current.ado.assets.push(libFileDest);
                     }
                 }
@@ -910,7 +910,7 @@
                         // and these are throwing error too when exist
                         let locFileDest = locFile.dest;
                         if (!locFileDest.startsWith('./')) { locFileDest = './' + locFileDest; }
-                        locFileDest = locFileDest.replace(options.dest, '').replace(options.current.ado.name, '').replace('//', '');
+                        locFileDest = locFileDest.replace('/' + options.current.build, '').replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
                         options.current.ado.assets.push(locFileDest);
                     }
                 }
