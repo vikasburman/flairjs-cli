@@ -873,6 +873,11 @@
                             dest: './' + path.join(libsDest, lib.replace(libsSrc.replace('./', ''), ''))
                         };
                         fsx.copySync(libFile.src, libFile.dest, { errorOnExist: true })
+
+                        // add it to assets list as well - since at the end this is an asset 
+                        // the only diff is that these type of assets does not pass through lint, min and gz pipeline
+                        // and these are throwing error too when exist
+                        options.current.ado.assets.push(libFile.dest);
                     }
                 }
             };
@@ -893,6 +898,11 @@
                             dest: './' + path.join(locDest, locale.replace(locSrc.replace('./', ''), ''))
                         };
                         fsx.copySync(locFile.src, locFile.dest, { errorOnExist: true })
+
+                        // add it to assets list as well - since at the end this is an asset 
+                        // the only diff is that these type of assets does not pass through lint, min and gz pipeline
+                        // and these are throwing error too when exist
+                        options.current.ado.assets.push(locFile.dest);
                     }
                 }
             };            
