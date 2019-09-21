@@ -414,7 +414,7 @@
                     astDest = './' + path.join(options.current.dest, options.current.asmName);
             
                 if (fsx.existsSync(astSrc)) {
-                    let assets = rrd(astSrc).filter(junk.not);
+                    let assets = rrd(astSrc).filter(file => junk.not(path.basename(file)));
                     for (let asset of assets) {
                         if (asset.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
                         
@@ -446,7 +446,7 @@
                 ]);
             };
             const collectTypesAndResourcesAndRoutes = () => {
-                let files = rrd(options.current.nsPath).filter(junk.not),
+                let files = rrd(options.current.nsPath).filter(file => junk.not(path.basename(file))),
                     processedNSAs = [],
                     till_nsa = '';
                 options.current.ado.resourcesAndTypes = [];
@@ -700,7 +700,7 @@
                         options.current.asmLupdate = fsx.statSync(options.current.asm).mtime; 
                         const areFilesUpdatedSinceLupdate = () => {
                             let isChanged = false;
-                            let allFiles = rrd(options.current.asmPath).filter(junk.not);
+                            let allFiles = rrd(options.current.asmPath).filter(file => junk.not(path.basename(file)));
                             for(let f of allFiles) {
                                 if (fsx.statSync(f).mtime > options.current.asmLupdate) {
                                     isChanged = true;
@@ -728,7 +728,7 @@
                     astDest = './' + path.join(options.current.dest, options.current.asmName);
                 
                 if (fsx.existsSync(astSrc)) {
-                    let assets = rrd(astSrc).filter(junk.not);
+                    let assets = rrd(astSrc).filter(file => junk.not(path.basename(file)));
                     for (let asset of assets) {
                         if (asset.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
                         
@@ -769,6 +769,7 @@
                     astFileDestMin = '';
                 if (!astFileDest.startsWith('./')) { astFileDest = './' + astFileDest; }
                 astFileDest = astFileDest.replace('/' + options.current.build, '/').replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
+                if (astFileDest.startsWith('/')) { astFileDest = astFileDest.substr(1); }
                 astFileDestMin = astFileDest.replace('.' + astFile.ext, '{.min}.' + astFile.ext);
                 
                 if (options.minify && !options.current.skipMinify && !options.current.skipMinifyThisAssembly) {    
@@ -865,7 +866,7 @@
                 
                 if (fsx.existsSync(libsSrc)) {
                     logger(0, 'libs', libsSrc);
-                    let libs = rrd(libsSrc).filter(junk.not);
+                    let libs = rrd(libsSrc).filter(file => junk.not(path.basename(file)));
                     for (let lib of libs) {
                         if (lib.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
                         
@@ -883,6 +884,7 @@
                         let libFileDest = libFile.dest;
                         if (!libFileDest.startsWith('./')) { libFileDest = './' + libFileDest; }
                         libFileDest = libFileDest.replace('/' + options.current.build, '/').replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
+                        if (libFileDest.startsWith('/')) { libFileDest = libFileDest.substr(1); }
                         options.current.ado.assets.push(libFileDest);
                     }
                 }
@@ -893,7 +895,7 @@
                 
                 if (fsx.existsSync(locSrc)) {
                     logger(0, 'locales', locSrc);
-                    let locales = rrd(locSrc).filter(junk.not);
+                    let locales = rrd(locSrc).filter(file => junk.not(path.basename(file)));
                     for (let locale of locales) {
                         if (locale.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
                         
@@ -911,6 +913,7 @@
                         let locFileDest = locFile.dest;
                         if (!locFileDest.startsWith('./')) { locFileDest = './' + locFileDest; }
                         locFileDest = locFileDest.replace('/' + options.current.build, '/').replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
+                        if (locFileDest.startsWith('/')) { locFileDest = locFileDest.substr(1); }
                         options.current.ado.assets.push(locFileDest);
                     }
                 }
@@ -921,7 +924,7 @@
 
                 if (fsx.existsSync(rootSrc)) {
                     logger(0, 'root', rootSrc); 
-                    let rootFiles = rrd(rootSrc).filter(junk.not);
+                    let rootFiles = rrd(rootSrc).filter(file => junk.not(path.basename(file)));
                     for (let rootFile of rootFiles) {
                         if (rootFile.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
                         
