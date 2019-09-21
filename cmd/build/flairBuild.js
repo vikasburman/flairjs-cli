@@ -765,8 +765,11 @@
                 
                 // define asset to process
                 let astFile = options.current.ado.assets.splice(0, 1)[0], // pick from top
-                    astFileDest = astFile.dest.replace(options.current.dest, (options.current.build ? './' + options.current.build : '.')),
-                    astFileDestMin = astFileDest.replace('.' + astFile.ext, '{.min}.' + astFile.ext);
+                    astFileDest = astFile.dest,
+                    astFileDestMin = '';
+                if (!astFileDest.startsWith('./')) { astFileDest = './' + astFileDest; }
+                astFileDest = astFileDest.replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
+                astFileDestMin = astFileDest.replace('.' + astFile.ext, '{.min}.' + astFile.ext);
                 
                 if (options.minify && !options.current.skipMinify && !options.current.skipMinifyThisAssembly) {    
                     justNames.push(astFileDestMin);
@@ -877,7 +880,10 @@
                         // add it to assets list as well - since at the end this is an asset 
                         // the only diff is that these type of assets does not pass through lint, min and gz pipeline
                         // and these are throwing error too when exist
-                        options.current.ado.assets.push(libFile.dest);
+                        let libFileDest = libFile.dest;
+                        if (!libFileDest.startsWith('./')) { libFileDest = './' + libFileDest; }
+                        libFileDest = libFileDest.replace(options.dest, '').replace(options.current.ado.name, '').replace('//', '');
+                        options.current.ado.assets.push(libFileDest);
                     }
                 }
             };
@@ -902,7 +908,10 @@
                         // add it to assets list as well - since at the end this is an asset 
                         // the only diff is that these type of assets does not pass through lint, min and gz pipeline
                         // and these are throwing error too when exist
-                        options.current.ado.assets.push(locFile.dest);
+                        let locFileDest = locFile.dest;
+                        if (!locFileDest.startsWith('./')) { locFileDest = './' + locFileDest; }
+                        locFileDest = locFileDest.replace(options.dest, '').replace(options.current.ado.name, '').replace('//', '');
+                        options.current.ado.assets.push(locFileDest);
                     }
                 }
             };            
