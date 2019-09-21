@@ -20,6 +20,7 @@
 
     // includes
     const rrd = require('recursive-readdir-sync'); 
+    const junk = require('junk');
     const copyDir = require('copy-dir');
     const path = require('path');
     const fsx = require('fs-extra');
@@ -413,7 +414,7 @@
                     astDest = './' + path.join(options.current.dest, options.current.asmName);
             
                 if (fsx.existsSync(astSrc)) {
-                    let assets = rrd(astSrc);
+                    let assets = rrd(astSrc).filter(junk.not);
                     for (let asset of assets) {
                         if (asset.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
                         
@@ -445,7 +446,7 @@
                 ]);
             };
             const collectTypesAndResourcesAndRoutes = () => {
-                let files = rrd(options.current.nsPath),
+                let files = rrd(options.current.nsPath).filter(junk.not),
                     processedNSAs = [],
                     till_nsa = '';
                 options.current.ado.resourcesAndTypes = [];
@@ -699,7 +700,7 @@
                         options.current.asmLupdate = fsx.statSync(options.current.asm).mtime; 
                         const areFilesUpdatedSinceLupdate = () => {
                             let isChanged = false;
-                            let allFiles = rrd(options.current.asmPath);
+                            let allFiles = rrd(options.current.asmPath).filter(junk.not);
                             for(let f of allFiles) {
                                 if (fsx.statSync(f).mtime > options.current.asmLupdate) {
                                     isChanged = true;
@@ -727,7 +728,7 @@
                     astDest = './' + path.join(options.current.dest, options.current.asmName);
                 
                 if (fsx.existsSync(astSrc)) {
-                    let assets = rrd(astSrc);
+                    let assets = rrd(astSrc).filter(junk.not);
                     for (let asset of assets) {
                         if (asset.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
                         
@@ -761,10 +762,17 @@
                     options.current.ado.assets = justNames;
                     cb(); return; 
                 }
-
+                
                 // define asset to process
-                let astFile = options.current.ado.assets.splice(0, 1)[0]; // pick from top
-                justNames.push(astFile.dest.replace(options.current.dest, (options.current.build ? './' + options.current.build : '.')));
+                let astFile = options.current.ado.assets.splice(0, 1)[0], // pick from top
+                    astFileDest = astFile.dest.replace(options.current.dest, (options.current.build ? './' + options.current.build : '.')),
+                    astFileDestMin = astFileDest.replace('.' + astFile.ext, '{.min}.' + astFile.ext);
+                
+                if (options.minify && !options.current.skipMinify && !options.current.skipMinifyThisAssembly) {    
+                    justNames.push(astFileDestMin);
+                } else {
+                    justNames.push(astFileDest);
+                }
         
                 // process only if full build OR asset is changed
                 if (!options.fullBuild && fsx.existsSync(astFile.dest)) {
@@ -854,7 +862,7 @@
                 
                 if (fsx.existsSync(libsSrc)) {
                     logger(0, 'libs', libsSrc);
-                    let libs = rrd(libsSrc);
+                    let libs = rrd(libsSrc).filter(junk.not);
                     for (let lib of libs) {
                         if (lib.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
                         
@@ -874,7 +882,7 @@
                 
                 if (fsx.existsSync(locSrc)) {
                     logger(0, 'locales', locSrc);
-                    let locales = rrd(locSrc);
+                    let locales = rrd(locSrc).filter(junk.not);
                     for (let locale of locales) {
                         if (locale.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
                         
@@ -894,7 +902,7 @@
 
                 if (fsx.existsSync(rootSrc)) {
                     logger(0, 'root', rootSrc); 
-                    let rootFiles = rrd(rootSrc);
+                    let rootFiles = rrd(rootSrc).filter(junk.not);
                     for (let rootFile of rootFiles) {
                         if (rootFile.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
                         
