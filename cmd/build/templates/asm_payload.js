@@ -52,15 +52,10 @@ AppDomain.context.current().currentAssemblyBeingLoaded('<<which_file>>');
 // assembly closure: embedded resources (end)        
 
 // clear assembly being loaded
-AppDomain.context.current().currentAssemblyBeingLoaded();
+AppDomain.context.current().currentAssemblyBeingLoaded('', onLoadComplete);
 
 // register assembly definition object
 AppDomain.registerAdo('<<ado>>');
-
-// assembly load complete
-if (typeof onLoadComplete === 'function') { 
-    onLoadComplete();   // eslint-disable-line no-undef
-}
 
 // return settings and config
 return Object.freeze({
