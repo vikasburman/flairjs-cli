@@ -887,6 +887,9 @@
                         let libFileDest = libFile.dest;
                         if (!libFileDest.startsWith('./')) { libFileDest = './' + libFileDest; }
                         libFileDest = libFileDest.replace('/' + options.current.build, '/').replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
+                        if (options.custom && options.profiles.current.omitRoot) {
+                            libFileDest = libFileDest.replace(options.profiles.current.destRoot, '');
+                        }                        
                         if (libFileDest.startsWith('/')) { libFileDest = libFileDest.substr(1); }
                         options.current.ado.assets.push(libFileDest);
                     }
@@ -916,6 +919,9 @@
                         let locFileDest = locFile.dest;
                         if (!locFileDest.startsWith('./')) { locFileDest = './' + locFileDest; }
                         locFileDest = locFileDest.replace('/' + options.current.build, '/').replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
+                        if (options.custom && options.profiles.current.omitRoot) {
+                            locFileDest = locFileDest.replace(options.profiles.current.destRoot, '');
+                        }                        
                         if (locFileDest.startsWith('/')) { locFileDest = locFileDest.substr(1); }
                         options.current.ado.assets.push(locFileDest);
                     }
