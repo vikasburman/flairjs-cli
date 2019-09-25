@@ -769,9 +769,12 @@
                     astFileDestMin = '';
                 if (!astFileDest.startsWith('./')) { astFileDest = './' + astFileDest; }
                 astFileDest = astFileDest.replace('/' + options.current.build, '/').replace(options.dest, '').replace(options.current.ado.name, '').replace('//', ''); // this becomes 'path/fileName.ext' without ./ in start (to save preamble size)
+                if (options.custom && options.profiles.current.omitRoot) {
+                    astFileDest = astFileDest.replace(options.profiles.current.destRoot, '');
+                }
                 if (astFileDest.startsWith('/')) { astFileDest = astFileDest.substr(1); }
                 astFileDestMin = astFileDest.replace('.' + astFile.ext, '{.min}.' + astFile.ext);
-                
+
                 if (options.minify && !options.current.skipMinify && !options.current.skipMinifyThisAssembly) {    
                     justNames.push(astFileDestMin);
                 } else {
