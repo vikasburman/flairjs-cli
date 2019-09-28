@@ -1058,6 +1058,7 @@
                     content = replaceAll(content, '<<file>>', thisFile);
                     content = injector('./', content);
                     content = replaceAll(content, '$(', '$$$('); // replace all messed-up calls with correct $$$( eventually becomes $$(
+                    content = replaceAll(content, '$.', '$$$.'); // replace all messed-up calls with correct $$$. eventually becomes $$.
         
                     // associate type with namespace
                     content = giveNamespaceAndNameToType(content, nsFile.nsName, nsFile.typeName);
