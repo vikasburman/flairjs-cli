@@ -570,6 +570,7 @@
                         //   handler: qualified type name that handles this route
                         //      handler can be of any class that is derived from Handler base class
                         //   verbs: name of the verbs supported on this route, like get, post, etc. - handler must have the same name methods to handle this verb - methods can be sync or async
+                        //   mw: standard server/client middlewares definitions as per usage context -> { name: '', func: '', args: [] } OR { name: '', args: [] }
                         //   index: any + or - number to move routes up or down wrt other routes, all routes from all assemblies are sorted by index before being activated
                         //      routes are indexed first and then applied in context of their individual mount
                         //      mount's order in config ultimately defines the overall order first than the index of the route itself inside the mount
@@ -583,6 +584,7 @@
                                 mount: route.mount || 'main', // by default all routes mount to main
                                 index: route.index || 0, // no index means all are at same level
                                 verbs: route.verbs || [], // verbs, e.g., view / get / post, etc.
+                                mw: route.mw || [], 
                                 path: route.path, 
                                 handler: route.handler
                             });
