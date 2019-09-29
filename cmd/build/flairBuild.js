@@ -1247,7 +1247,7 @@
                 options.current.asmContent = '';
             };  
             const generateDocs = () => {
-                jsdocs2md.renderSync({ files: options.current.asmMain }); 
+                jsdocs2md.renderSync({ files: options.current.asm }); 
             };
 
             // define assembly to process
