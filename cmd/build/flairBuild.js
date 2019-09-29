@@ -25,6 +25,7 @@
     const path = require('path');
     const fsx = require('fs-extra');
     const del = require('del');
+    const jsdocs2md = require('jsdoc-to-markdown');
 
     // asm build info
     const buildInfo = {
@@ -224,7 +225,7 @@
         };
     
         processNext(deps);
-    };        
+    };     
     const build = async (options, buildDone) => {
         // logging
         const logger = options.logger
@@ -1245,6 +1246,9 @@
                 fsx.writeFileSync(options.current.asm, options.current.asmContent.trim(), 'utf8');
                 options.current.asmContent = '';
             };  
+            const generateDocs = () => {
+                jsdocs2md.renderSync({ files: options.current.asmMain }); 
+            };
 
             // define assembly to process
             let asmFolder = options.current.assemblies.splice(0, 1)[0]; // pick from top
@@ -1315,6 +1319,9 @@
                                     pack(() => {
                                         // save ADO to cache
                                         saveADOToCache();
+
+                                        // generate document
+                                        generateDocs();
 
                                         // assembly (end)
                                         logger(0, '==>', options.current.stat); 
@@ -1647,6 +1654,8 @@
      *              activeFlag: flag that needs to be marked as active in when flags are written (see write_flajs.js for more info) - this is generally passed from command line as arg
      *              src: source folder root path
      *              dest: destination folder root path - where to copy built assemblies
+     *              cache: temp folder root path - where all temp content is stored for caching or otherwise
+     *              docs: if documentation to be generated for each built assembly
      *              custom: if custom control is needed for picking source and other files
      *                  true - all root level folders under 'src' will be treated as one individual assembly
      *                      Note: if folder name starts with '_', it is skipped
@@ -1925,6 +1934,8 @@
         options.dest = options.dest || './dist';
         options.src = options.src || './src';
         options.cache = options.cache || './temp';
+
+        options.docs = options.docs || false;
     
         options.custom = options.custom || false; 
         options.customConfig = config(options, 'build', 'custom');
