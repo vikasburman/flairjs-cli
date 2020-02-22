@@ -111,7 +111,17 @@
         }
         
         return content;
-    }; 
+    };
+    const buildAsmMarkdown = (ado, asmContent) => {
+        let asmDocContent = '';
+
+        asmDocContent += 'TODO';
+
+        // TODO:
+        
+        // return
+        return asmDocContent;
+    };
 
     // core engine
     const bump = (options) => {
@@ -409,7 +419,7 @@
                 return rootNS;
             };
             const collectNSAssets = (nsaSrc, nsName) => {
-                // NOTE: This method should be in sync with collectAssets, as both doing similar things in different comtext
+                // NOTE: This method should be in sync with collectAssets, as both doing similar things in different context
                 let assetsInfo = [],
                     astSrc = nsaSrc,
                     astDest = './' + path.join(options.current.dest, options.current.asmName);
@@ -459,7 +469,7 @@
                         till_nsa = file.substr(0, file.indexOf('/(nsa)/') + 7); // pick from start till where /(nsa)/ ends
                         if (processedNSAs.indexOf(till_nsa) === -1) { // process this nsa folder, if not already processed
                             let assetsInfo = collectNSAssets(till_nsa, options.current.nsName); 
-                            options.current.nsAssets.push(assetsInfo); // puth collect assets array as element in this array
+                            options.current.nsAssets.push(assetsInfo); // push collected assets array as element in this array
                             continue; // skip collecting types resources or assets from this special folder inside namespace (at any level inside)
                         } // else ignore the file, as it must have already been processed as asset
                     }
@@ -565,13 +575,13 @@
                         // ]
                         // Each route Definition can be:
                         // {
-                        //   name: route name, to access route programatically, it will be prefixed with namespace under which this routes.json is kept
+                        //   name: route name, to access route programmatically, it will be prefixed with namespace under which this routes.json is kept
                         //   mount: route root mount name - by default it is 'main', as per config.json setting, it can be any other mount also (each mount is a different express/page app for server/client)
                         //   path: route path in relation to mount
                         //   handler: qualified type name that handles this route
                         //      handler can be of any class that is derived from Handler base class
                         //   verbs: name of the verbs supported on this route, like get, post, etc. - handler must have the same name methods to handle this verb - methods can be sync or async
-                        //   mw: standard server/client middlewares definitions as per usage context -> { name: '', func: '', args: [] } OR { name: '', args: [] }
+                        //   mw: standard server/client middleware definitions as per usage context -> { name: '', func: '', args: [] } OR { name: '', args: [] }
                         //   index: any + or - number to move routes up or down wrt other routes, all routes from all assemblies are sorted by index before being activated
                         //      routes are indexed first and then applied in context of their individual mount
                         //      mount's order in config ultimately defines the overall order first than the index of the route itself inside the mount
@@ -725,7 +735,7 @@
                 }
             };
             const collectAssets = () => {
-                // NOTE: This method should be in sync with collectNSAssets, as both doing similar things in different comtext
+                // NOTE: This method should be in sync with collectNSAssets, as both doing similar things in different context
                 let assetsInfo = [],
                     astSrc = './' + path.join(options.current.asmPath, '(assets)'),
                     astDest = './' + path.join(options.current.dest, options.current.asmName);
@@ -1244,10 +1254,13 @@
             };      
             const createAssembly = () => {
                 fsx.writeFileSync(options.current.asm, options.current.asmContent.trim(), 'utf8');
-                options.current.asmContent = '';
             };  
             const generateDocs = () => {
-                jsdocs2md.renderSync({ files: options.current.asm }); 
+                if (!options.docs) { return; }
+
+                let asmDocContent = buildAsmMarkdown(options.current.ado, options.current.asmContent);
+                fsx.writeFileSync(options.current.asmDoc, asmDocContent.trim(), 'utf8');
+                logger(0, '#', options.current.asmDocs);
             };
 
             // define assembly to process
@@ -1258,6 +1271,7 @@
             options.current.asmName = asmFolder;
             options.current.asmPath = './' + path.join(options.current.src, options.current.asmName);
             options.current.asm = './' + path.join(options.current.dest, options.current.asmName + '.js');
+            options.current.asmDoc = options.current.asm.replace('.js', '.md');
             options.current.asmFileName = ('./' + path.join(options.current.dest, options.current.asmName) + '.js').replace(options.dest, '.');
             if (options.custom && options.profiles.current.omitRoot) {
                 options.current.asmFileName = options.current.asmFileName.replace(options.profiles.current.destRoot, '');
@@ -1324,7 +1338,10 @@
                                         generateDocs();
 
                                         // assembly (end)
+                                        options.current.asmContent = '';
                                         logger(0, '==>', options.current.stat); 
+
+                                        // done
                                         cb();
                                     });
                                 });
@@ -1438,7 +1455,7 @@
                         target = path.join(options.dest, theProfile.dest);
                     }
                 } else {
-                    target = './' + path.join(options.dest, (theProfile.root || profileName)); // if root is not defined, it means the folder name is same as profilename
+                    target = './' + path.join(options.dest, (theProfile.root || profileName)); // if root is not defined, it means the folder name is same as profileName
                 }
                 return target;
             };
@@ -1651,7 +1668,7 @@
      *  flairBuild(options, cb)
      * @params
      *  options: object - build configuration object having following options:
-     *              activeFlag: flag that needs to be marked as active in when flags are written (see write_flajs.js for more info) - this is generally passed from command line as arg
+     *              activeFlag: flag that needs to be marked as active in when flags are written (see write_flags.js for more info) - this is generally passed from command line as arg
      *              src: source folder root path
      *              dest: destination folder root path - where to copy built assemblies
      *              cache: temp folder root path - where all temp content is stored for caching or otherwise
@@ -1674,7 +1691,7 @@
      *                  "profiles": {
      *                      "<profileName>": {
      *                          "root": ""  - root folder name where source of this profile is kept - this is used for identification of content under dest folder only - not used for any prefixing with other paths in profile
-     *                                        if this is absent or not defined, it is assumed to be same as profilename itself
+     *                                        if this is absent or not defined, it is assumed to be same as profileName itself
      *                          "dest": "" - dest folder name where built/processed files are anchored under dest folder
      *                                      it can be:
      *                                          (empty) or absence of this, means, put it in same root folder name under dest
@@ -1742,8 +1759,8 @@
      *              lintAssets: true/false     - is assets are to be run lint on
      *              minifyAssets: true/false     - is assets are to be minified
      *              gzipAssets: true/false     - is assets are to be gzipped
-     *              lintResources: true/false   - if resources are to be linted before bundeling
-     *              minifyResources: true/false - if resources are to be minified before bundeline
+     *              lintResources: true/false   - if resources are to be linted before bundling
+     *              minifyResources: true/false - if resources are to be minified before bundling
      *              utf8EncodeResourceTypes: for what type of resources utf8 encoding can be done - ["txt", "xml", "js", "md", "json", "css", "html", "svg"]
      *              deps: true/false
      *              depsConfig - dependencies pull/push configuration options file path (or object), having structure
@@ -1812,7 +1829,7 @@
      *                          (assets)   - assets folder
      *                                  > this special folder can be used to place all external assets like images, css, js, fonts, etc.
      *                                  > it can have any structure underneath
-     *                                  > all files and folder under it, are copied to destination under <assemnly folder> folder
+     *                                  > all files and folder under it, are copied to destination under <assembly folder> folder
      *                                  > which means, if an assembly has assets, in destination folder, it will look like:
      *                                      <assembly folder>.js        - the assembly file
      *                                      <assembly folder>.min.js    - the assembly file (minified)
@@ -1835,7 +1852,7 @@
      *                          (libs)   - libs folder
      *                                  > this special folder can be used to place all external third-party libraries, etc.
      *                                  > it can have any structure underneath
-     *                                  > all files and folder under it, are copied to destination under <assemnly folder> folder
+     *                                  > all files and folder under it, are copied to destination under <assembly folder> folder
      *                                    it copies over content of (assets) folder, so overwrite may happen, it will warn.
      *                                  > no processing of files happen whatsoever, files are copied as is
      *                                  > note, '(libs)' folder itself is not copied, but all contents underneath are copied
