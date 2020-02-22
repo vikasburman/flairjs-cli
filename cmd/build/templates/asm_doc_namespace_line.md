@@ -1,0 +1,1 @@
+<<ns>> | <<routes>> | <<resources>> | <<types>>

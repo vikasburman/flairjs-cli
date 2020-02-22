@@ -1,55 +1,46 @@
-# Flair.js
-True Object Oriented JavaScript
-
+# <<name>>
+<<desc>>
 ---
 
-## Assembly: flair
-
-
-### Namespaces
-
-## _._
-
-[IAspect](#IAspect)
-
-<a href="#IAspect">IAspect</a>
-
-#### Types
-
-<span id="IAspect">IAspect</span>
-
-
-
-
-
-## Resources
-
-## Routes
+## Assembly: <<asm>> 
+_Version: <<version>>_
+<br/>_Datetime: <<lupdate>>_
+<br/>_Files: <<file>> (<<file_size>>), <<minfile>> (<<minfile_size>), <<gzfile> (<<gzfile_size>>)_
+<br/>_Format: <<format>> v<<format_ver>>, Engine: <<engine>> v<<engine_ver>>_
 
 ## Assets
+_Base Path: ./<<base>>_
+<br/>
+Path | File | Size
+-|-|-
+<<assets_list>>
 
-### 
+## Namespaces
+Namespace | Routes # | Resources # | Types #
+-|-|-
+<<ns_list>>
 
+## Routes
+Namespace | Name | Route
+-|-|-
+<<routes_list>>
 
-## More Information
+## Resources
+Namespace | Name | Type
+-|-|-
+<<resources_list>>
 
-### Identifiers
+## Types
+Namespace | Name | Type
+-|-|-
+<<types_list>>
 
-Type | Value 
----- | ----- 
-Name | flair
-Version | 0.4.52
+### API
+<<types_api>>
 
-### Package
-
-Type | Value
----- | ----- 
-File(s) | flair.js <small>(282kb)</small><br> flair.min.js <small>(28kb)</small><br> flair.min.js.gz <small>(2kb)</small>
-Asset(s) | flair/ <br> - folders (0) <br> - files (0)
-Built | Sun, 29 Sep 2019 17:35:48 GMT
-
-### Specifications
-Type | Value | Version
----- | ----- | -------
-Builder | flairBuild | 1
-Format | fasm | 1
+---
+<small>
+_<<copyright>>_
+<br/>
+_License: <<license>>_
+</small>

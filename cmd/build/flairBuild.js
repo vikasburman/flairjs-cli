@@ -52,10 +52,16 @@
     const asm_resource = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_resource.js'), 'utf8');
     const asm_preamble = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_preamble.js'), 'utf8');
     const asm_preamble_line = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_preamble_line.js'), 'utf8');
+    const asm_doc = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc.md'), 'utf8');
+    const asm_doc_assets_line = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_assets_line.md'), 'utf8');
+    const asm_doc_namespace_line = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_namespace_line.md'), 'utf8');
+    const asm_doc_resources_line = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_resources_line.md'), 'utf8');
+    const asm_doc_routes_line = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_routes_line.md'), 'utf8');
+    const asm_doc_types_line = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_types_line.md'), 'utf8');
+    const asm_doc_types_api = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_types_api.md'), 'utf8');
 
     // plugins
     const all_plugins = {
-        docker_image: { cmd: "" },
         node_modules: { cmd: "yarn install --prod" },
         web_modules: {},
         copy_files: {},
@@ -113,12 +119,22 @@
         return content;
     };
     const buildAsmMarkdown = (ado, asmContent) => {
-        let asmDocContent = '';
+        // main document
+        let asmDocContent = asm_doc;
+        asmDocContent = replaceAll(asmDocContent, '<<name>>',  options.packageJSON.name);
+        asmDocContent = replaceAll(asmDocContent, '<<desc>>',  options.current.ado.desc);
+        asmDocContent = replaceAll(asmDocContent, '<<asm>>', options.current.ado.name);
+        asmDocContent = replaceAll(asmDocContent, '<<file>>', options.current.asmFileName);
+        asmDocContent = replaceAll(asmDocContent, '<<version>>', options.current.ado.version);
+        asmDocContent = replaceAll(asmDocContent, '<<lupdate>>', options.current.ado.lupdate);
+        asmDocContent = replaceAll(asmDocContent, '<<copyright>>', options.current.ado.copyright);
+        asmDocContent = replaceAll(asmDocContent, '<<license>>', options.current.ado.license);
 
-        asmDocContent += 'TODO';
+        // assets
+        asmDocContent = replaceAll(asmDocContent, '<<base>>', options.current.asmFileName.replace('.js', '/'));
 
-        // TODO:
-        
+        // let asmTypesContent += jsdocs2md.renderSync({ source: asmContent });
+
         // return
         return asmDocContent;
     };
@@ -394,7 +410,7 @@
             });
         };
     
-        // process namespaces
+        // 5: process namespaces
         const processNamespaces = (done) => {
             if (options.current.namespaces.length === 0) { 
                 delete options.current.nsName;
@@ -626,7 +642,7 @@
             processNamespaces(done); 
         };
 
-        // process assemblies
+        // 4: process assemblies
         const processAssemblies = (done) => {
             if (options.current.assemblies.length === 0) { done(); return; }
 
@@ -1260,7 +1276,7 @@
 
                 let asmDocContent = buildAsmMarkdown(options.current.ado, options.current.asmContent);
                 fsx.writeFileSync(options.current.asmDoc, asmDocContent.trim(), 'utf8');
-                logger(0, '#', options.current.asmDocs);
+                logger(0, '#', options.current.asmDoc);
             };
 
             // define assembly to process
@@ -1290,7 +1306,7 @@
                 // assembly (start)
                 logger(0, 'asm', asmFolder, true); 
 
-                // append new ADO
+                // append new ADO - Assembly Definition Object
                 appendADO();
 
                 // process namespaces under this assembly 
@@ -1374,7 +1390,7 @@
             });
         };
 
-        // process sources
+        // 3b: process sources
         const processSources = (done) => {
             if (options.sources.length === 0) { done(); return; }
     
@@ -1436,7 +1452,7 @@
             });
         };
 
-        // process profiles
+        // 3a: process profiles
         const processProfiles = (done) => {
             if (options.profiles.length === 0) { done(); return; } // when all done
     
@@ -1513,7 +1529,6 @@
             options.profiles.current.copy = options.profiles.current.copy || [];
             options.profiles.current.minify = options.profiles.current.minify || [];
             options.profiles.current.flags = options.profiles.current.flags || null;
-            options.profiles.current.docker = options.profiles.current.docker || null;
             options.profiles.current.build = options.profiles.current.build || [];
             
             // auto-define plugins
@@ -1552,9 +1567,6 @@
                 if (options.profiles.current.bundles.length !== 0) { 
                     autoPlugins.push('create_bundle'); 
                 }                                              
-                if (options.profiles.current.docker) { 
-                    autoPlugins.push('docker_image');
-                }   
             }
             if (definedPlugins.length !== 0) {
                 options.profiles.current.plugins = definedPlugins; // no auto
@@ -1591,7 +1603,7 @@
             });
         };
     
-        // build process
+        // 2: build process
         const startBuild = (done) => {
             // support functions
             const getPlugins = () => {
@@ -1653,7 +1665,7 @@
             }
         };
 
-        // start
+        // 1: start
         startBuild(() => {
             // all done
             buildDone()
@@ -1672,7 +1684,9 @@
      *              src: source folder root path
      *              dest: destination folder root path - where to copy built assemblies
      *              cache: temp folder root path - where all temp content is stored for caching or otherwise
-     *              docs: if documentation to be generated for each built assembly
+     *              docs: if documentation to be generated for each built assembly 
+     *                    doc annotations must follow jsdocs syntax: https://jsdoc.app/
+     *                    read more here: https://www.npmjs.com/package/jsdoc-to-markdown
      *              custom: if custom control is needed for picking source and other files
      *                  true - all root level folders under 'src' will be treated as one individual assembly
      *                      Note: if folder name starts with '_', it is skipped
@@ -2007,6 +2021,7 @@
             options.lintTypes = ['js']; // for quick builds run lint only for JS files
             options.minify = false;
             options.gzip = false;
+            options.docs = false;
             options.minifyAssets = false;
             options.gzipAssets = false;
             options.minifyResources = false;
