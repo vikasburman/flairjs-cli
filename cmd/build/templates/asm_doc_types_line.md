@@ -1,1 +1,0 @@
-<<ns>> | <a href="#<<qualified_name>>"><<name>></a> | <<type>>
