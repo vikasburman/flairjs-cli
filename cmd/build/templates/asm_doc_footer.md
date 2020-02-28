@@ -1,7 +1,9 @@
 <span name="footer" id="asm_footer">
 
 </br>
----
+
+##
+ 
 <small><small>
 Built with <<engine>> (v<<engine_ver>>) using <<format>> (v<<format_ver>>) format.
 

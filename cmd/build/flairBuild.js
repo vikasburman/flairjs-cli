@@ -671,6 +671,7 @@
             // Type 3: @<symbol> value1, value2, ...
             //  @mixes <mixin-type>, <mixin-type>, ...
             //  @implements <interface-type>, <interface-type>, ...
+            //  @conditional <cond1>, <cond2>, ...
             //
             // Type 4: @<symbol> { value1 } value2
             //  @returns {<type>} <desc> | @yields {<type>} <desc>
@@ -698,7 +699,7 @@
                 symbols = {},
                 type1 = ['public', 'private', 'private-se', 'protected', 'protected-set', 'abstract', 'virtual', 'override', 'sealed', 'overload', 'optional', 'static', 'async', 'generator', 'readonly'],
                 type2 = ['type', 'extends', 'deprecated', 'since'],
-                type3 = ['mixes', 'implements'],
+                type3 = ['mixes', 'implements', 'conditional'],
                 type4 = ['returns', 'yields', 'throws'],
                 type5 = ['param', 'prop'],
                 type6 = ['func', 'event'],
@@ -900,18 +901,19 @@
         sections: {
             support: {
                 getId: (name, sig) => {
-                    sig = sig.replace('(', '.').replace(')', '.');
-                    sig = replaceAll(sig, ', ', '.');
-                    return name + '.' + sig;
+                    sig = sig.replace('(', '-').replace(')', '-');
+                    sig = replaceAll(sig, ', ', '-');
+                    return name + '-' + sig;
                 },
                 getMembersId: (name) => {
-                    return name + ':' + 'members';
+                    return name + '-' + 'members';
                 },
                 getNameAndLink: (typeName, memberName) => {
                     let section = '';
                     const support = jsdocs2md.sections.support;
                     
-                    section += `\n\n<span id="${support.getId(typeName, memberName)}"><a href="#${support.getMembersId(typeName)}">**${memberName}**</a></span>`;
+                    //section += `\n\n<a href="#${support.getMembersId(typeName)}" id="${support.getId(typeName, memberName)}">**${memberName}**</a>`; // this does not work on GFM (Github Flavored Markdown)
+                    section += `\n\n<a id="${support.getId(typeName, memberName)}"></a>[**${memberName}**](#${support.getMembersId(typeName)}) &nbsp; `; // and this does not work in VSCode Preview
 
                     return section;
                 },
@@ -929,24 +931,24 @@
 
                     return section;
                 },
-                getScopeAndOthers: (ano, isStatic, isAsync, isGenerator) => {
+                getScopeAndModifiers: (ano, isStatic, isAsync) => {
                     let section = '';
 
-                    section += ` [${ano.scope}`;
-                    if (isStatic && ano.static) { section += `, static`; }
-                    if (isAsync && ano.async) { section += `, async`; }
-                    if (isGenerator && ano.generator) { section += `, generator`; }
-                    section += '] &nbsp; ';
+                    // scope
+                    section += ` \` ${ano.scope} \``
 
-                    return section;
-                },
-                getModifiers: (ano) => {
-                    let section = '';
-
+                    // others
+                    if (isStatic && ano.static) { section += ' ` static ` '; }
+                    if (isAsync && ano.async) { section += ' ` async ` '; }
+                   
+                    // modifiers
                     if (ano.modifiers.length > 0) {
-                        section += `_modifiers_ [${ano.modifiers.join(', ')}]`;
-                    }    
-                    section += '\n';
+                        for (let m of ano.modifiers) {
+                            section += ` \` ${m} \` `;
+                        }
+                    }
+
+                    section += `\n`;
 
                     return section;
                 },
@@ -1034,7 +1036,7 @@
                         section += ano.since ? `> * _Since:_ ${ano.since}\n` : '';
                         section += ano.deprecated ? `> * _Deprecated:_ ${ano.deprecated}\n` : '';
                         section += ano.optional ? `> * _Optional:_ This member is optional and interface's compliance will pass even if this member is not implemented by the class.\n` : '';
-                        section += ano.conditional.length > 0 ? `> * _Conditional:_ This member is conditional and will be present only when all of the following runtime environmental conditions are met.\n` + `> ${ano.conditional.join(', ')}\n` : '';
+                        section += ano.conditional.length > 0 ? `> * _Conditional:_ This member is conditional and will be present only when all of the mentioned runtime environmental conditions are met: **${ano.conditional.join('**, **')}**\n` : '';
                         section += `>\n`;
                     }   
 
@@ -1048,16 +1050,17 @@
                 section += `</br>\n<h3 id="${ano.type.name}"><a href="#types">${ano.type.name}</a></h3>\n\n`;
                 
                 // type
-                section += `\`${ano.type.type}\``;
+                section += `**${ano.type.type}** &nbsp;`;
 
                 // scope, static
-                section += ` [${ano.type.scope}`
-                if (ano.type.static) { section += `, static`; }
-                section += '] &nbsp; ';
+                section += ` \` ${ano.type.scope} \``
+                if (ano.type.static) { section += ' ` static ` '; }
 
                 // modifiers
                 if (ano.type.modifiers.length > 0) {
-                    section += `_modifiers_ [${ano.type.modifiers.join(', ')}]`;
+                    for (let m of ano.type.modifiers) {
+                        section += ` \` ${m} \` `;
+                    }
                 }
 
                 // extends, mixes, implements
@@ -1192,8 +1195,7 @@
                     section += '\n\n**Constructors**\n\n';
                     for (let ano_c of ano.constructors) {
                         section += support.getNameAndLink(ano.type.name, ano_c.signature); // name and link
-                        section += support.getScopeAndOthers(ano_c); // scope
-                        section += support.getModifiers(ano_c); // modifiers
+                        section += support.getScopeAndModifiers(ano_c); // scope
                         section += support.getDesc(ano_c); // desc
                         section += support.getParams(ano_c); // params
                         section += support.getExceptions(ano_c); // throws
@@ -1214,8 +1216,7 @@
                     section += '\n\n**Destructors**\n\n';
                     for (let ano_d of ano.destructors) {
                         section += support.getNameAndLink(ano.type.name, ano_d.signature); // name and link
-                        section += support.getScopeAndOthers(ano_d); // scope
-                        section += support.getModifiers(ano_d); // modifiers
+                        section += support.getScopeAndModifiers(ano_d); // scope
                         section += support.getDesc(ano_d); // desc
                         section += support.getParams(ano_d); // params
                         section += support.getExceptions(ano_d); // throws
@@ -1236,8 +1237,7 @@
                     section += '\n\n**Properties**\n\n';
                     for (let ano_p of ano.properties) {
                         section += support.getNameAndLink(ano.type.name, ano_p.name); // name and link
-                        section += support.getScopeAndOthers(ano_p, true); // scope, static
-                        section += support.getModifiers(ano_p); // modifiers
+                        section += support.getScopeAndModifiers(ano_p, true); // scope, static
                         section += support.getDesc(ano_p, true); // type, desc
                         section += support.getRemarks(ano_p); // remarks
                         section += support.getExample(ano_p); // example
@@ -1256,8 +1256,7 @@
                     section += '\n\n**Functions**\n\n';
                     for (let ano_m of ano.methods) {
                         section += support.getNameAndLink(ano.type.name, ano_m.signature); // name and link
-                        section += support.getScopeAndOthers(ano_m, true, true, true); // scope, static, async, generator
-                        section += support.getModifiers(ano_m); // modifiers
+                        section += support.getScopeAndModifiers(ano_m, true, true); // scope, static, async
                         section += support.getDesc(ano_m); // desc
                         section += support.getParams(ano_m); // params
                         section += support.getReturns(ano_m); // returns
@@ -1280,8 +1279,7 @@
                     section += '\n\n**Events**\n\n';
                     for (let ano_e of ano.events) {
                         section += support.getNameAndLink(ano.type.name, ano_e.signature); // name and link
-                        section += support.getScopeAndOthers(ano_e); // scope
-                        section += support.getModifiers(ano_e); // modifiers
+                        section += support.getScopeAndModifiers(ano_e); // scope
                         section += support.getDesc(ano_e); // desc
                         section += support.getParams(ano_e); // params
                         section += support.getRemarks(ano_e); // remarks
@@ -1349,6 +1347,8 @@
                 section = replaceAll(section, '<<asm>>', options.current.ado.name);
                 section = replaceAll(section, '<<version>>', options.current.ado.version);
                 section = replaceAll(section, '<<lupdate>>', options.current.ado.lupdate);
+                section = replaceAll(section, '<<using_asm>>', `${options.packageJSON.link}/#/using-flair-assembly`);
+                
 
                 // file list
                 let jsFile = options.current.asm.replace(options.current.dest + '/', ''),
@@ -1357,10 +1357,10 @@
                 let fileList = `[${jsFile}](./${jsFile})`;
                 fileList += ' (' + Math.round(fsx.statSync(options.current.asm).size / 1024) + 'k';
                 if (fsx.existsSync(minFile)) {
-                    fileList += ', ' + Math.round(fsx.statSync(minFile).size / 1024) + `k [minified](${minFile})`;
+                    fileList += ', ' + Math.round(fsx.statSync(minFile).size / 1024) + `k [minified](${jsFile.replace('.js', '.min.js')})`;
                 }
                 if (fsx.existsSync(gzFile)) {
-                    fileList += ', ' + Math.round(fsx.statSync(gzFile).size / 1024) + `k [gzipped](${gzFile})`;
+                    fileList += ', ' + Math.round(fsx.statSync(gzFile).size / 1024) + `k [gzipped](${jsFile.replace('.js', '.min.js.gz')})`;
                 }
                 fileList += ')';
                 section = replaceAll(section, '<<file_list>>', fileList);
@@ -1517,7 +1517,7 @@
                         fileSize = (fileSize > 5 ? ` &nbsp; \` ${fileSize}k \`` : ''); // only assets >5k are shown size 
                         fileType = (thisAst.type === fileExt ? '' : ` &nbsp; \` ${thisAst.type} \``); // file type is shown only where it is a known file type or user defined, which is different from file extension
                         astList += '<<name>> | <<desc>>'
-                                    .replace('<<name>>', `[${baseFile}](./${basePath}/${thisAst.file}) ${fileType} ${fileSize}`)
+                                    .replace('<<name>>', `[${baseFile}](./${basePath}/${baseFile}) ${fileType} ${fileSize}`)
                                     .replace('<<desc>>', thisAst.desc + '\n');
                     }
                     section = section.replace('<<list>>', astList);
@@ -1564,9 +1564,9 @@
             footer: (options) => {
                 let section = asm_doc_footer;
 
-                section = replaceAll(section, '<<engine>>', options.current.ado.builder.name);
+                section = replaceAll(section, '<<engine>>', `[${options.current.ado.builder.name}](${options.packageJSON.link}/#/flairBuild)`);
                 section = replaceAll(section, '<<engine_ver>>', options.current.ado.builder.version);
-                section = replaceAll(section, '<<format>>', options.current.ado.builder.format);
+                section = replaceAll(section, '<<format>>', `[${options.current.ado.builder.format}](${options.packageJSON.link}/#/fasm)`);
                 section = replaceAll(section, '<<format_ver>>', options.current.ado.builder.formatVersion);
                 
                 return section;
