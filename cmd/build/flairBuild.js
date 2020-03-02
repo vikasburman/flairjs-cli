@@ -5,6 +5,8 @@
 (function(root, factory) {
     'use strict';
 
+    // #region module definition
+
     if (typeof define === 'function' && define.amd) { // AMD support
         define(factory);
     } else if (typeof exports === 'object') { // CommonJS and Node.js module support
@@ -15,8 +17,13 @@
     } else { // expose as global on window
         root.flairBuild = factory();
     }
+
+    // #endregion
+    
 })(this, function() {
     'use strict';
+
+    // #region globals
 
     // includes
     const rrd = require('recursive-readdir-sync'); 
@@ -27,7 +34,7 @@
     const del = require('del');
     const path_sort = require('path-sort');
 
-    // asm build info
+    // build info
     const buildInfo = {
         name: 'flairBuild',
         version: '1',
@@ -36,6 +43,7 @@
         contains: [
             'init',         // index.js is bundled outside closure, which can have injected dependencies
             'func',         // functions.js is bundled in closure, which can have local closure functions as well as a special named function 'onLoadComplete'
+            'comp',         // components.js is bundled in closure, which can have local closure level components
             'type',         // types are embedded
             'vars',         // flair variables are made available in a closure where types are bundled
             'reso',         // resources are bundled
@@ -45,23 +53,6 @@
             'sreg'          // selfreg code is bundled
         ]
     };    
-
-    // templates
-    const asm_module = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_module.js'), 'utf8')
-    const asm_preamble = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_preamble.js'), 'utf8');
-    const asm_preamble_line = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_preamble_line.js'), 'utf8');
-    const asm_resource = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_resource.js'), 'utf8');
-    const asm_type_async = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_type_async.js'), 'utf8');
-    const asm_type_sync = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_type_sync.js'), 'utf8');
-    const asm_doc_header = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_header.md'), 'utf8');
-    const asm_doc_footer = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_footer.md'), 'utf8');
-    const asm_doc_assembly = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_assembly.md'), 'utf8');
-    const asm_doc_resources = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_resources.md'), 'utf8');
-    const asm_doc_assets = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_assets.md'), 'utf8');
-    const asm_doc_routes = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_routes.md'), 'utf8');
-    const asm_doc_ns = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_ns.md'), 'utf8');
-    const asm_doc_types = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_types.md'), 'utf8');
-    const asm_doc_extra = fsx.readFileSync(path.join(__dirname, 'templates', 'asm_doc_extra.md'), 'utf8');
 
     // plugins
     const all_plugins = {
@@ -73,7 +64,29 @@
         create_bundle: { minify: true, gzip: true }
     };
 
+    // options (carry options for current build session, when session starts)
+    let options = null;
+
     // support functions
+    const guid = () => {
+        return '-xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    };    
+    const logger = (level, msg, data, prlf, polf) => {
+        if (options.suppressLogging) { return; }
+        
+        prlf=false; polf=false; // no lf is much cleaner - so turn off all pre/post lf settings
+        
+        let colLength = 15;
+        msg = ' '.repeat(colLength - msg.length) + msg + (level === 0 ? ': ' : '');
+        if (level !== 0) { data = '- ' + data; }
+        msg = msg + '  '.repeat(level) + data.toString();
+        if (prlf) { msg = '\n' + msg; }
+        if (polf) { msg += '\n'; }
+        console.log(msg);   // eslint-disable-line no-console
+    }; 
     const getFolders = (root, excludeRoot) => {
         const _getFolders = () => {
             return fsx.readdirSync(root)
@@ -95,33 +108,7 @@
     const replaceAll = (string, find, replace) => {
         return string.replace(new RegExp(escapeRegExp(find), 'g'), replace);
     };
-    const injector = (base, content) => {
-        // Unescaped \s*([\(\)\w@_\-.\\\/]+)\s*
-        const FILENAME_PATTERN = '\\s*([\\(\\)\\w@_\\-.\\\\/]+)\\s*';
-        const FILENAME_MARKER = '<filename>';
-        const DEFAULT_PATTERN = '<!--\\s*inject:<filename>-->';
-    
-        const injectPattern = '^([ \\t]*)(.*?)' + DEFAULT_PATTERN.replace(FILENAME_MARKER, FILENAME_PATTERN);
-        const regex = new RegExp(injectPattern, 'm');
-        let fileName, textBefore, whitespace, currMatch, match;
-    
-        while ((currMatch = regex.exec(content))) {
-            match = currMatch[0];
-            whitespace = currMatch[1];
-            textBefore = currMatch[2];
-            fileName = currMatch[3];
-    
-            var injectContent = whitespace + textBefore +
-                                fsx.readFileSync(path.join(base, fileName), 'utf8').split(/\r?\n/)
-                                .map((line, i) => {
-                                    return (i > 0) ? whitespace + line : line
-                                }).join('\n');
-            content = content.replace(match, function () { return injectContent })
-        }
-        
-        return content;
-    };
-    const bump = (options) => {
+    const bumpVersion = () => {
         if (options.skipBumpVersion) { return; }
     
         // bump version
@@ -144,9 +131,9 @@
         options.packageJSON.version = newVer;
         fsx.writeFileSync(options.package, JSON.stringify(options.packageJSON, null, 4), 'utf8');
         
-        options.logger(0, 'version', newVer);
+        logger(0, 'version', newVer);
     };
-    const copyDeps = (isPost, options, done) => {
+    const copyDeps = (isPost, done) => {
         let deps = [];
         if (isPost) {
             if (options.postBuildDeps && options.depsConfig && options.depsConfig.post.length > 0) { 
@@ -232,157 +219,528 @@
         };
     
         processNext(deps);
-    };       
-    const jsdocs2md = {
-        annotations: {
-            TypeAnnotation: function(symbols, typeName, typeType, typeDesc) {
+    };
+
+    //#endregion 
+
+    // #region code processor
+    let code = { templates: {}, extract: {} };
+
+    // templates
+    code.templates.get = (file) => { return fsx.readFileSync(path.join(__dirname, 'templates', 'asm', file), 'utf8'); };
+    code.templates.module = code.templates.get('module.js');
+    code.templates.preamble = code.templates.get('preamble.js');
+    code.templates.preamble_line = code.templates.get('preamble_line.js');
+    code.templates.resource = code.templates.get('resource.js');
+    code.templates.type_async = code.templates.get('type_async.js');
+    code.templates.type_sync = code.templates.get('type_sync.js');
+    
+    // extractors
+    code.extract.componentInfo = (content) => {
+        let item = {
+            desc: ''
+        };
+
+        // 1: it looks for first occurance of '@component'
+        // 2: then it looks for first occurance of @desc after that
+        let foundAt = content.indexOf('@component');
+        if (foundAt !== -1) {
+            content = content.substring(foundAt);
+            foundAt = content.indexOf('@desc'); // length of @desc = 5
+            if (foundAt !== -1) {
+                item.desc = content.substring(foundAt + 5,  content.indexOf('\n', foundAt)).trim(); // pick all content after @desc till next line break
+            }
+        }
+        return item;
+    };
+    code.extract.typeInfo = (content) => {
+        let item = {
+            type: '',
+            desc: ''
+        };
+        // 1: it looks for first occurance of 'Class(', 'Interface(', 'Mixin(', 'Struct(' or 'Enum(' because flairTypes = ['class', 'enum', 'interface', 'mixin', 'struct']
+        // 2: then look for presence of @type before this
+        // 3: then look for prescnce of @desc between #2 and #3
+        let foundAt = content.indexOf('Class(');
+        if (foundAt !== -1) { 
+            item.type = 'class';
+        } else {
+            foundAt = content.indexOf('Interface(');
+            if (foundAt !== -1) { 
+                item.type = 'interface';
+            } else {
+                foundAt = content.indexOf('Mixin(');
+                if (foundAt !== -1) { 
+                    item.type = 'mixin';
+                } else {
+                    foundAt = content.indexOf('Enum(');
+                    if (foundAt !== -1) { 
+                        item.type = 'enum';
+                    } else {
+                        foundAt = content.indexOf('Struct(');
+                        if (foundAt !== -1) { 
+                            item.type = 'struct';
+                        } 
+                    } 
+                }                                    
+            }
+        }
+        if (foundAt !== -1) { // found at some level
+            content = content.substring(0, foundAt);
+            foundAt = content.indexOf('@type');
+            if (foundAt !== -1) {
+                content = content.substring(foundAt);
+                foundAt = content.indexOf('@desc');
+                if (foundAt !== -1) {
+                    item.desc = content.substring(foundAt,  content.indexOf('\n', foundAt)).trim(); // pick all content after @desc till next line break
+                }
+            }
+        }
+        return item;
+    };
+
+    // injector
+    code.inject = (base, content, isInjectionsAreComponents, docComponents) => {
+        // Unescaped \s*([\(\)\w@_\-.\\\/]+)\s*
+        const FILENAME_PATTERN = '\\s*([\\(\\)\\w@_\\-.\\\\/]+)\\s*';
+        const FILENAME_MARKER = '<filename>';
+        const DEFAULT_PATTERN = '<!--\\s*inject:<filename>-->';
+    
+        const injectPattern = '^([ \\t]*)(.*?)' + DEFAULT_PATTERN.replace(FILENAME_MARKER, FILENAME_PATTERN);
+        const regex = new RegExp(injectPattern, 'm');
+        let fileName, textBefore, whitespace, currMatch, match, item, name;
+    
+        while ((currMatch = regex.exec(content))) {
+            match = currMatch[0];
+            whitespace = currMatch[1];
+            textBefore = currMatch[2];
+            fileName = currMatch[3];
+    
+            var injectContent = whitespace + textBefore +
+                                fsx.readFileSync(path.join(base, fileName), 'utf8').split(/\r?\n/)
+                                .map((line, i) => {
+                                    return (i > 0) ? whitespace + line : line
+                                }).join('\n');
+            
+            // store injection content as docComponent (since it is being bundled)
+            if (isInjectionsAreComponents) {
+                item = code.extract.componentInfo(injectContent);
+                name = path.basename(fileName, path.extname(fileName)); // gives just the file name, which is the name of the component
+                docComponents.push({ name: name, desc: item.desc, file: fileName, content: injectContent });
+            }
+            
+            content = content.replace(match, function () { return injectContent })
+        }
+        
+        return content;
+    };
+   
+    // #endregion
+
+    // #region docs generator
+    let docs = { templates: {}, jsdocs: {}, annotations: {}, render: { link: {}, sections: {} }}
+    
+    // jsdocs
+    docs.jsdocs.extractBlocks = (content) => {
+        // credits: https://www.npmjs.com/package/jsdoc-regex
+        // https://stackoverflow.com/questions/35905181/regex-for-jsdoc-comments
+        let rx = new RegExp(/[ \t]*\/\*\*\s*\n([^*]*(\*[^/])?)*\*\//g); 
+
+        return content.match(rx) || [];
+    };
+    docs.jsdocs.extractSymbols = (block) => {
+        // NOTE: it will leave all unknown/unsupported symbols
+        // known symbols and format types are:
+        //
+        // Type 1: @<symbol>
+        // Supported: 
+        //  @public | @private |  @privateSet | @protected | @protectedSet | @internal
+        //  @abstract | @virtual | @override | @sealed
+        //  @overload
+        //  @optional
+        //  @static
+        //  @async
+        //  @generator
+        //  @readonly
+        //  @ignore
+        //  @type | @component
+        //  @construct | @noconstruct
+        // 
+        // Type 2: @<symbol> value
+        //  @desc <desc>
+        //  @extends <class-type>
+        //  @deprecated <desc>
+        //  @restricted <desc>
+        //  @since <version>
+        //                                         
+        // Type 3: @<symbol> value1, value2, ...
+        //  @mixes <mixin-type>, <mixin-type>, ...
+        //  @implements <interface-type>, <interface-type>, ...
+        //  @conditional <cond1>, <cond2>, ...
+        //
+        // Type 4: @<symbol> { value1 } value2
+        //  @returns {<type>/<type2>} <desc> | @yields {<type>/<type2>} <desc>
+        //  @throws {<type>} <desc>                                 [multiple allowed]
+        //
+        // Type 5: @<symbol> { value1 } value2 - value3
+        //  @param {<type>/<type2>: <default>} <name> - <desc>      [multiple allowed]
+        //  @seealso {<link>} <name> - <desc>                       [multiple allowed]
+        //  @back {<link>} <name> - <desc>
+        //  @next {<link>} <name> - <desc>
+        //  @prop {<type>: <default>} <name> - <desc>
+        //  
+        // Type 6: @<symbol> value1 - value2
+        //  @func <name> - <desc>
+        //  @event <name> - <desc>
+        //
+        // Type 7: @<symbol> \n multi-line value
+        //  @remarks                                                
+        //  @example                                                
+        let lines = block.split('\n'),
+            line = '',
+            symbol = '',
+            symbolData = '',
+            items = [],
+            idx = -1,
+            isIgnore = false,
+            isIgnoreBlock = false,
+            symbols = {},
+            type1 = ['type', 'component', 'construct', 'noconstruct', 'public', 'private', 'privateSet', 'protected', 'protectedSet', 'internal', 'abstract', 'virtual', 'override', 'sealed', 'overload', 'optional', 'static', 'async', 'generator', 'readonly', 'ignore'],
+            type2 = ['desc', 'extends', 'deprecated', 'restricted', 'since'],
+            type3 = ['mixes', 'implements', 'conditional'],
+            type4 = ['returns', 'yields', 'throws'],
+            type5 = ['param', 'seealso', 'prop', 'back', 'next'],
+            type6 = ['func', 'event'],
+            type7 = ['example', 'remarks'],
+            multiInstance = ['param', 'seealso', 'throws'];
+        for(let i = 0; i < lines.length; i++) {
+            
+            line = lines[i].trim();
+            if (line !== '/**' && line !== '*/') { // not start/end line
+                
+                line = line.substr(1).trim(); // remove *
+                if (line.substr(0, 1) === '@') { // symbol line
+
+                    // extract symbol
+                    idx = line.indexOf(' ');
+                    if (idx === -1) {
+                        symbol = line.substr(1).trim();
+                        line = '';
+                    } else {
+                        symbol = line.substr(1, idx).trim();
+                        line = line.substr(idx).trim();
+                    }
+
+                    // if @ignore is found, stop processing this block
+                    // that's why, its best to put @ignore as first, in case a documentation block
+                    // is only for code file and not for generated documentation
+                    if (symbol === 'ignore') { isIgnoreBlock = true; break; }
+
+                    // multi instance error check
+                    if (symbols[symbol] && multiInstance.indexOf(symbol) === -1) {
+                        throw `Multiple instances of @${symbol} are not allowed. (${block})`;
+                    }
+
+                    // get symbol data
+                    isIgnore = false;                        
+                    if (type1.indexOf(symbol) !== -1) { // @<symbol>
+                        symbolData = true;
+                    } else if (type2.indexOf(symbol) !== -1) { // @<symbol> value
+                        symbolData = line;
+                    } else if (type3.indexOf(symbol) !== -1) { // @<symbol> value1, value2, ...
+                        symbolData = line.split(',').map(item => item.trim());
+                    } else if (type4.indexOf(symbol) !== -1) { // @<symbol> { value1 } value2
+                        symbolData = [];    
+                        items = line.split('}').map(item => item.trim());
+                        symbolData.push(items[0].substr(1).trim()); // remove {
+                        symbolData.push(items[1] || '');                        
+                    } else if (type5.indexOf(symbol) !== -1) { // @<symbol> { value1 } value2 - value3
+                        symbolData = [];
+                        items = line.split('}').map(item => item.trim());
+                        symbolData.push(items[0].substr(1).trim()); // remove {
+                        items = (items[1] || '').split('-').map(item => item.trim());
+                        symbolData.push(items[0] || '');
+                        symbolData.push(items[1] || '');  
+                    } else if (type6.indexOf(symbol) !== -1) { // @<symbol> value1 - value2
+                        symbolData = [];
+                        items = line.split('-').map(item => item.trim());
+                        symbolData.push(items[0] || '');
+                        symbolData.push(items[1] || '');
+                    } else if (type7.indexOf(symbol) !== -1) { // @<symbol> \n multi-line value
+                        idx = i;
+                        symbolData = '';
+                        while(true) {
+                            idx++;
+                            line = lines[idx].trim();
+                            if (line !== '*/' && !line.startsWith('* @')) {
+                                line = line.substr(1).trim(); // remove *
+                                symbolData += line + '\n';
+                            } else {
+                                i = idx - 1;
+                                break;
+                            }
+                        }
+                    } else {
+                        isIgnore = true;
+                        // unsupported symbol - ignore (don't throw)
+                    }
+
+                    // store symbol data
+                    if (!isIgnore) {
+                        if (multiInstance.indexOf(symbol) !== -1) { // multiple instances
+                            if (!symbols[symbol]) { symbols[symbol] = []; }
+                            symbols[symbol].push(symbolData);
+                        } else { // single instance
+                            symbols[symbol] = symbolData;
+                        }
+                    }
+                }
+            }
+        }
+
+        // return
+        if (!isIgnoreBlock) { return symbols; }
+        return null;
+    };
+
+    // annotation processor
+    docs.annotations.Annotation = function(symbols, type, name, typeOfType) {
+        // All Known Symbols
+        /** 
+         * @type | @component | @func <name> - <desc> | @prop {<type>} name - <desc> | @event <name> - <desc>
+         * @construct | @noconstruct
+         * @desc <desc>                                             
+         * @public | @private | @privateSet | @protected | @protectedSet | @internal  
+         * @abstract | @virtual | @override | @sealed                           
+         * @overload                                                           
+         * @static                                                              
+         * @async | @generator  
+         * @readonly                                                           
+         * @extends <class-type>                                    
+         * @mixes <mixin-type>, <mixin-type>, ...                   
+         * @implements <interface-type>, <interface-type>, ...      
+         * @param {<type>} <name> - <desc>                                      
+         * @returns {<type>} <desc> | @yields {<type>} <desc>    
+         * @throws {<type>} <desc> 
+         * @optional        
+         * @conditional <cond1>, <cond2>, ... 
+         * @deprecated <desc>                                       
+         * @restricted <desc>                                       
+         * @since <version>                                         
+         * @remarks                                                 
+         *      <multi-line markdown format desc>
+         * @exmple                                                  
+         *      <multi-line markdown format text and embedded code>
+         * @seealso {<link>} <name> - <desc>                        
+         * @back {<link>} <name> - <desc>                        
+         * @next {<link>} <name> - <desc>                        
+        */  
+       
+        // common
+        let ano = {
+            name: '',
+            desc: '',
+            type: '',
+            scope: 'public',
+            optional: false,
+            isMember: false,
+            static: false,
+            modifiers: [],
+            conditional: [],
+            deprecated: '',
+            restricted: '',
+            since: '',
+            remarks: '',
+            example: '',
+            seealso: [], // [ { link, name, desc } ]
+            back: null, // { link, name, desc }
+            next: null // { link, name, desc }
+        },
+        allowedScopes = [];
+
+        // extended
+        switch (type) {
+            case 'type':
                 /** 
-                 * @type <desc>                                             [mandatory]
-                 * @public                                                  [optional]
-                 * @abstract | @sealed                                      [optional]
-                 * @static                                                  [optional]
-                 * @extends <class-type>                                    [optional]
-                 * @mixes <mixin-type>, <mixin-type>, ...                   [optional]
-                 * @implements <interface-type>, <interface-type>, ...      [optional]
-                 * @deprecated <desc>                                       [optional]
-                 * @since <version>                                         [optional]
-                 * @remarks                                                 [optional]
+                 * @type
+                 * @desc <desc>                                             
+                 * @public
+                 * @abstract | @sealed                           
+                 * @static                                                              
+                 * @extends <class-type>                                    
+                 * @mixes <mixin-type>, <mixin-type>, ...                   
+                 * @implements <interface-type>, <interface-type>, ...      
+                 * @deprecated <desc>                                       
+                 * @restricted <desc>                                       
+                 * @since <version>                                         
+                 * @remarks                                                 
                  *      <multi-line markdown format desc>
-                 * @exmple                                                  [optional]
+                 * @exmple                                                  
                  *      <multi-line markdown format text and embedded code>
-                */
-                let ano = {
-                    isType: true,
-                    isClass: false,
-                    isInterface: false,
-                    isMixin: false,
-                    isStruct: false,
-                    isEnum: false,
-                    type: '',
-                    desc: '',
-                    name: '',
-                    justName: '',
-                    ns: '',
-                    scope: 'public',
-                    static: false,
-                    modifiers: [],
-                    extends: '',
-                    mixes: [],
-                    implements: [],
-                    deprecated: '',
-                    since: '',
-                    remarks: '',
-                    example: ''
-                };
+                 * @seealso {<link>} <name> - <desc>  
+                 * @back {<link>} <name> - <desc>                        
+                 * @next {<link>} <name> - <desc>                        
+                */                
+                // add
+                ano.isType = true;
+                ano.isClass = false;
+                ano.isInterface = false;
+                ano.isMixin = false;
+                ano.isStruct = false;
+                ano.isEnum = false;
+                ano.justName = '';
+                ano.ns = '';
+                ano.extends = '';
+                ano.mixes = [];
+                ano.implements = [];
+
+                // remove
+                delete ano.isMember;
+                delete ano.optional;
+                delete ano.conditional;
 
                 // type
-                switch(typeType) {
+                switch(typeOfType) {
                     case 'class': ano.type = 'Class'; ano.isClass = true; break;
                     case 'interface': ano.type = 'Interface'; ano.isInterface = true; break;
                     case 'mixin': ano.type = 'Mixin'; ano.isMixin = true; break;
                     case 'struct': ano.type = 'Structure'; ano.isStruct = true; break;
                     case 'enum': ano.type = 'Enum'; ano.isEnum = true; break;
-                    default:
-                        throw `Unknown type definition. ${typeType}`;
-                }
+                    default: throw `Unknown type definition. ${typeOfType}`;
+                }   
                 
                 // name, desc
-                ano.name = typeName;
-                ano.desc = typeDesc || symbols['type'];
+                ano.name = name;
+                ano.desc = symbols['desc'] || '';
 
-                // ns, justName
-                let items = typeName.split('.');
-                if (items.length === 1) {
-                    ano.ns = '(root)';
-                    ano.justName = typeName;
-                } else {
-                    ano.justName = items.splice(items.length - 1, 1)[0];
-                    ano.ns = items.join('.');
-                }
+                // scope
+                allowedScopes = ['public']; // till the time more scopes are supported for types
 
-                // static, modifiers, extends, mixes, implements
-                ano.static = symbols['static'] ? true : false;
-                if (!ano.static) {
+                // modifiers
+                if (!symbols['static']) {
                     if (symbols['abstract']) {
                         ano.modifiers.push('abstract');
                     } else if (symbols['sealed']) {
                         ano.modifiers.push('sealed');
                     }
-                    ano.extends = symbols['extends'] || '';
-                    ano.mixes = symbols['mixes'] || [];
-                    ano.implements = symbols['implements'] || [];
-                }
+                }                
 
-                // since, deprecated
-                ano.deprecated = symbols['deprecated'] || '';
-                if (!ano.deprecated) {
-                    ano.since = symbols['since'] || '';
-                }
+                // extends, mixes, implements
+                ano.extends = symbols['extends'] || '';
+                ano.mixes = symbols['mixes'] || [];
+                ano.implements = symbols['implements'] || [];
 
-                // others
-                ano.scope = 'public'; // till the time more scopes are supported for types
-                ano.remarks = symbols['remarks'] || '';
-                ano.example = symbols['example'] || '';
-
-                return ano;
-            },
-            PropertyAnnotation: function(symbols) {
+                break;
+            case 'component':
                 /** 
-                 * @prop {<type>} name - <desc>                                         [mandatory]
-                 * @public | @private | @private-set| @protected | @protected-set       [optional][default: public]
-                 * @abstract | @virtual | @override | @sealed                           [optional]
-                 * @static                                                              [optional]
-                 * @readonly                                                            [optional]
-                 * @optional                                                            [optional]
-                 * @conditional <cond1>, <cond2>, ...                                   [optional]
-                 * @deprecated <desc>                                                   [optional]
-                 * @since <version>                                                     [optional]
-                 * @remarks                                                             [optional]
-                 *      <multi-line markdown format desc> 
-                 * @exmple                                                              [optional]
+                 * @component
+                 * @construct | @noconstruct
+                 * @desc <desc>                                             
+                 * @public | @internal  
+                 * @async | @generator  
+                 * @param {<type>} <name> - <desc>                                      
+                 * @returns {<type>} <desc> | @yields {<type>} <desc>    
+                 * @throws {<type>} <desc> 
+                 * @deprecated <desc>                                       
+                 * @restricted <desc>                                       
+                 * @since <version>                                         
+                 * @remarks                                                 
+                 *      <multi-line markdown format desc>
+                 * @exmple                                                  
                  *      <multi-line markdown format text and embedded code>
-                */
-               let ano = {
-                    isMember: true,
-                    isProperty: true,
-                    type: '',
-                    name: '',
-                    desc: '',
-                    scope: 'public',
-                    modifiers: [],
-                    static: false,
-                    readonly: false,
-                    optional: false,
-                    conditional: [],
-                    deprecated: '',
-                    since: '',
-                    remarks: '',
-                    example: ''
-                };
+                 * @seealso {<link>} <name> - <desc>   
+                 * @back {<link>} <name> - <desc>                        
+                 * @next {<link>} <name> - <desc>                        
+                */                  
+                // add
+                ano.isComponent = true;
+                ano.isConstructible = false;
+                ano.isNonConstructible = false;
+                ano.isObject = false;
+
+                // type
+                // a component can be of following types:
+                // 1. constructible (constructible intent and possibility): function(){}
+                // 2. Function (Non-constructible intent or possibility): function(){}, function()* {} or ()=>{} 
+                // 3. Object: (any object)
+                // 
+                // this is identified by the presence of either @construct or @noconstruct or absence of both
+                if (symbols['construct']) {
+                    ano.type = 'Constructible';
+                    ano.isConstructible = true;
+                } else if (symbols['noconstruct']) {
+                    ano.type = 'Function';
+                    ano.isNonConstructible = true;
+                } else {
+                    ano.type = 'Object';
+                    ano.isObject = true;
+                }
+
+                // name, desc
+                ano.name = name;
+                ano.desc = symbols['desc'] || '';
+
+                // scope
+                allowedScopes = ['public', 'internal'];
+
+                if (ano.isConstructible || ano.isNonConstructible) {
+                    ano.overload = false;
+                    ano.overloadId = '';
+                    ano.params = []; // [ { type, name, desc } ]
+                    ano.signature = '';
+                    ano.throws = []; // [ { type, desc } ]
+                        
+                    if (ano.isNonConstructible) {
+                        ano.async = false;
+                        ano.generator = false;
+                        ano.returns = {
+                            type: '',
+                            desc: ''
+                        };
+                        ano.yields = {
+                            type: '',
+                            desc: ''
+                        };
+                    }
+                }
+
+                break;
+            case 'prop':
+                /** 
+                 * @prop {<type>} name - <desc>
+                 * @desc <desc>                                             
+                 * @public | @private | @privateSet | @protected | @protectedSet
+                 * @abstract | @virtual | @override | @sealed                           
+                 * @static                                                              
+                 * @readonly                                                           
+                 * @optional
+                 * @conditional <cond1>, <cond2>, ... 
+                 * @deprecated <desc>                                       
+                 * @restricted <desc>                                       
+                 * @since <version>                                         
+                 * @remarks                                                 
+                 *      <multi-line markdown format desc>
+                 * @exmple                                                  
+                 *      <multi-line markdown format text and embedded code>
+                 * @seealso {<link>} <name> - <desc>                        
+                */                  
+                // add
+                ano.isProperty = true;
+
+                // remove
+                delete ano.back;
+                delete ano.next;
 
                 // type, name, desc
                 ano.type = symbols['prop'][0] || 'object';
                 ano.name = symbols['prop'][1]; if(!ano.name) { throw `Document block must carry prop name at @prop symbol.`; }
-                ano.desc = symbols['prop'][2];
+                ano.desc = symbols['prop'][2] || '';
 
                 // scope
-                if (symbols['public']) {
-                    ano.scope = 'public';
-                } else if (symbols['protected-set']) {
-                    ano.scope = 'public (get), protected (set))';
-                } else if (symbols['protected']) {
-                    ano.scope = 'protected';
-                } else if (symbols['private-set']) {
-                    ano.scope = 'public (get), private (set))';
-                } else if (symbols['private']) {
-                    ano.scope = 'private';
-                } else {
-                    ano.scope = 'public';
-                }
+                allowedScopes = ['public', 'protected', 'private', 'protectedSet', 'privateSet'];
 
-                // static, modifiers
-                ano.static = symbols['static'] ? true : false;
-                if (!ano.static) {
+                // modifiers
+                if (!symbols['static']) {
                     if (symbols['abstract']) {
                         ano.modifiers.push('abstract');
                     } else if (symbols['virtual']) {
@@ -392,91 +750,68 @@
                         if (symbols['sealed']) { ano.modifiers.push('sealed'); }
                     }
                 }
+                if (symbols['readonly']) { ano.modifiers.push('readonly'); }
 
-                // since, deprecated
-                ano.deprecated = symbols['deprecated'] || '';
-                if (!ano.deprecated) {
-                    ano.since = symbols['since'] || '';
-                }
-
-                // others
-                ano.readonly = symbols['readonly'] ? true : false;
-                ano.optional = symbols['optional'] ? true : false;
-                ano.conditional = symbols['conditional'] || [];
-                ano.remarks = symbols['remarks'] || '';
-                ano.example = symbols['example'] || '';
-                
-                return ano;
-            },
-            MethodAnnotation: function(symbols) {
+                break;            
+            case 'func':
                 /** 
-                 * @func <name> - <desc>                                                [mandatory]
-                 * @overload                                                            [optional, mandatory only when there are same name methods]
-                 * @public | @private | @protected                                      [optional][default: public]
-                 * @abstract | @virtual | @override | @sealed                           [optional]
-                 * @static                                                              [optional]
-                 * @async                                                               [optional]
-                 * @generator                                                           [optional]
-                 * @optional                                                            [optional]
-                 * @conditional <cond1>, <cond2>, ...                                   [optional]
-                 * @deprecated <desc>                                                   [optional]
-                 * @since <version>                                                     [optional]
-                 * @param {<type>} <name> - <desc>                                      [optional]
-                 * @returns {<type>} <desc> | @yields {<type>} <desc>                   [optional][default: void]
-                 * @throws {<type>} <desc>                                              [optional]
-                 * @remarks                                                             [optional]
+                 * @func <name> - <desc>
+                 * @desc <desc>                                             
+                 * @public | @private | @protected
+                 * @abstract | @virtual | @override | @sealed                           
+                 * @overload                                                           
+                 * @static                                                              
+                 * @async | @generator  
+                 * @param {<type>} <name> - <desc>                                      
+                 * @returns {<type>} <desc> | @yields {<type>} <desc>    
+                 * @throws {<type>} <desc> 
+                 * @optional        
+                 * @conditional <cond1>, <cond2>, ... 
+                 * @deprecated <desc>                                       
+                 * @restricted <desc>                                       
+                 * @since <version>                                         
+                 * @remarks                                                 
                  *      <multi-line markdown format desc>
-                 * @exmple                                                              [optional]
+                 * @exmple                                                  
                  *      <multi-line markdown format text and embedded code>
-                */
-               let ano = {
-                    isMember: true,
-                    isMethod: true,
-                    name: '',
-                    desc: '',
-                    scope: 'public',
-                    modifiers: [],
-                    static: false,
-                    async: false,
-                    overload: false,
-                    optional: false,
-                    conditional: [],
-                    deprecated: '',
-                    since: '',
-                    params: [], // [ { type, name, desc } ]
-                    signature: '',
-                    generator: false,
-                    returns: {
-                        type: '',
-                        desc: ''
-                    },
-                    yields: {
-                        type: '',
-                        desc: ''
-                    },
-                    throws: [], // [ { type, desc } ]
-                    remarks: '',
-                    example: ''
-                };  
+                 * @seealso {<link>} <name> - <desc>                        
+                */                  
+                // add
+                ano.isMethod = true;
+                ano.isConstructible = false;
+                ano.isDestructor = false;
+                ano.overload = false;
+                ano.overloadId = '';
+                ano.async = false;
+                ano.params = []; // [ { type, name, desc } ]
+                ano.signature = '';
+                ano.generator = false;
+                ano.returns = {
+                    type: '',
+                    desc: ''
+                };
+                ano.yields = {
+                    type: '',
+                    desc: ''
+                };
+                ano.throws = []; // [ { type, desc } ]
 
-                // name, desc
+                 // remove
+                delete ano.type;
+                delete ano.back;
+                delete ano.next;
+
+                // name, desc, constructor, destructor
                 ano.name = symbols['func'][0]; if(!ano.name) { throw `Document block must carry func name at @func symbol.`; }
-                ano.desc = symbols['func'][1];
+                ano.desc = symbols['func'][1] || '';
+                if (ano.name === 'construct') { ano.isConstructor = true; }
+                if (ano.name === 'dispose') { ano.isDestructor = true; }
 
                 // scope
-                if (symbols['public']) {
-                    ano.scope = 'public';
-                } else if (symbols['protected']) {
-                    ano.scope = 'protected';
-                } else if (symbols['private']) {
-                    ano.scope = 'private';
-                } else {
-                    ano.scope = 'public';
-                }
+                allowedScopes = ['public', 'protected', 'private'];
 
-                // static, modifiers
-                ano.static = symbols['static'] ? true : false;
-                if (!ano.static) {
+                // modifiers
+                if (!symbols['static']) {
                     if (symbols['abstract']) {
                         ano.modifiers.push('abstract');
                     } else if (symbols['virtual']) {
@@ -487,119 +822,43 @@
                     }
                 }
 
-                // params, signature
-                ano.params = symbols['param'] || [];
-                if (ano.params.length > 0) {
-                    let types = '';
-                    for(let p of ano.params) { // [ [type, name, desc] ]
-                        if (types) { types += ', '; }
-                        if (!p[0]) { throw `Param type must be defined at @param symbol. (${ano.name})`; }
-                        types += p[0];
-                    }
-                    ano.signature = `${ano.name}(${types})`;
-                } else {
-                    ano.signature = `${ano.name}()`;
-                }
-
-                // generator, returns, yields
-                ano.generator = symbols['generator'] ? true : false;
-                if (ano.generator) {
-                    ano.returns = {
-                        type: 'Generator',
-                        desc: ''                
-                    };
-                    if (!symbols['yields']) { throw `Document block must carry @yields symbol for a generator function. (${ano.name})`; }
-                    ano.yields = {
-                        type: symbols['yields'][0],
-                        desc: symbols['yields'][1]
-                    };
-                    if (!ano.yields.type) { throw `Document block must carry yield type at @yields symbol. (${ano.name})`; }
-                } else {
-                    ano.yields = null;
-                    if (symbols['returns']) { 
-                        ano.returns = {
-                            type: symbols['returns'][0],
-                            desc: symbols['returns'][1]
-                        };
-                        if (!ano.returns.type) { throw `Document block must carry return type at @returns symbol or omit the @returns symbol, if there is no return value. (${ano.name})`; }
-                    } else {
-                        ano.returns = {
-                            type: 'void',
-                            desc: ''
-                        };         
-                    }
-                }
-
-                // throws
-                ano.throws = symbols['throws'] || [];
-                if (ano.throws.length > 0) {
-                    for(let e of ano.throws) { // [ [type, desc] ]
-                        if (!e[0]) { throw `Exception type must be defined at @throws symbol. (${ano.name})`; }
-                    }
-                }
-
-                // since, deprecated
-                ano.deprecated = symbols['deprecated'] || '';
-                if (!ano.deprecated) {
-                    ano.since = symbols['since'] || '';
-                }
-
-                // others
-                ano.async = symbols['async'] ? true : false;
-                ano.overload = symbols['overload'] ? true : false;
-                ano.optional = symbols['optional'] ? true : false;
-                ano.conditional = symbols['conditional'] || [];
-                ano.remarks = symbols['remarks'] || '';
-                ano.example = symbols['example'] || '';
-                
-                return ano;
-            },    
-            EventAnnotation: function(symbols) {
+                break;
+            case 'event':
                 /** 
-                 * @event <name> - <desc>                                               [mandatory]
-                 * @public | @private | @protected                                      [optional][default: public]
-                 * @abstract | @virtual | @override | @sealed                           [optional]
-                 * @optional                                                            [optional]
-                 * @conditional <cond1>, <cond2>, ...                                   [optional]
-                 * @deprecated <desc>                                                   [optional]
-                 * @since <version>                                                     [optional]
-                 * @param {<type>} <name> - <desc>                                      [optional]
-                 * @remarks                                                             [optional]
+                 * @event <name> - <desc>
+                 * @desc <desc>                                             
+                 * @public | @private | @protected  
+                 * @abstract | @virtual | @override | @sealed                           
+                 * @static                                                              
+                 * @param {<type>} <name> - <desc>                                      
+                 * @optional        
+                 * @conditional <cond1>, <cond2>, ... 
+                 * @deprecated <desc>                                       
+                 * @restricted <desc>                                       
+                 * @since <version>                                         
+                 * @remarks                                                 
                  *      <multi-line markdown format desc>
-                 * @exmple                                                              [optional]
-                 *      <multi-line markdown format text and embedded code> 
-                */
-               let ano = {
-                    isMember: true,
-                    isEvent: true,
-                    name: '',
-                    desc: '',
-                    scope: 'public',
-                    modifiers: [],
-                    optional: false,
-                    conditional: [],
-                    deprecated: '',
-                    since: '',
-                    params: [], // [ { type, name, desc } ]
-                    signature: '',
-                    remarks: '',
-                    example: ''
-                };  
+                 * @exmple                                                  
+                 *      <multi-line markdown format text and embedded code>
+                 * @seealso {<link>} <name> - <desc>                        
+                */  
+                // add
+                ano.isEvent = true;
+                ano.params = []; // [ { type, name, desc } ]
+                ano.signature = '';
+
+                // remove
+                delete ano.type;
+                delete ano.static;
+                delete ano.back;
+                delete ano.next;
 
                 // name, desc
                 ano.name = symbols['event'][0]; if(!ano.name) { throw `Document block must carry event name at @event symbol.`; }
-                ano.desc = symbols['event'][1];
-
+                ano.desc = symbols['event'][1] || '';
+                
                 // scope
-                if (symbols['public']) {
-                    ano.scope = 'public';
-                } else if (symbols['protected']) {
-                    ano.scope = 'protected';
-                } else if (symbols['private']) {
-                    ano.scope = 'private';
-                } else {
-                    ano.scope = 'public';
-                }
+                allowedScopes = ['public', 'protected', 'private'];
 
                 // modifiers
                 if (symbols['abstract']) {
@@ -609,258 +868,263 @@
                 } else if (symbols['override']) {
                     ano.modifiers.push('override');
                     if (symbols['sealed']) { ano.modifiers.push('sealed'); }
-                }
+                }                  
 
-                // params, signature
-                ano.params = symbols['param'] || [];
-                if (ano.params.length > 0) {
-                    let types = '';
-                    for(let p of ano.params) { // [ [type, name, desc] ]
-                        if (types) { types += ', '; }
-                        if (!p[0]) { throw `Param type must be defined at @param symbol. (${ano.name})`; }
-                        types += p[0];
-                    }
-                    ano.signature = `${ano.name}(${types})`;
-                } else {
-                    ano.signature = `${ano.name}()`;
-                }
+                break;
+        }
 
-                // since, deprecated
-                ano.deprecated = symbols['deprecated'] || '';
-                if (!ano.deprecated) {
-                    ano.since = symbols['since'] || '';
-                }
+        // static
+        if (typeof ano.static !== 'undefined') { ano.static = symbols['static'] ? true : false; }
 
-                // others
-                ano.optional = symbols['optional'] ? true : false;
-                ano.conditional = symbols['conditional'] || [];
-                ano.remarks = symbols['remarks'] || '';
-                ano.example = symbols['example'] || '';
+        // scope
+        ano.scope = symbols['public'] || '';
+        if (allowedScopes.indexOf(ano.scope) === -1) { ano.scope = 'public'; }
+        if (ano.scope === 'protectedSet') { ano.scope = 'public (get), protected (set))'; }
+        if (ano.scope === 'privateSet') { ano.scope = 'public (get), private (set))'; }
 
-                return ano;
-            }     
-        },
-        grepSegments: (code) => {
-            // credits: https://www.npmjs.com/package/jsdoc-regex
-            // https://stackoverflow.com/questions/35905181/regex-for-jsdoc-comments
-            let rx = new RegExp(/[ \t]*\/\*\*\s*\n([^*]*(\*[^/])?)*\*\//g); 
-
-            return code.match(rx);
-        },
-        parseSegment: (segment, typeName, typeType, typeDesc) => {
-            // NOTE: it will leave all unknown/unsupported symbols
-            // known symbols and format types are:
-            //
-            // Type 1: @<symbol>
-            // Supported: 
-            //  @public | @private |  @private-set | @protected | @protected-set
-            //  @abstract | @virtual | @override | @sealed
-            //  @overload
-            //  @optional
-            //  @static
-            //  @async
-            //  @generator
-            //  @readonly
-            // 
-            // Type 2: @<symbol> value
-            //  @type <desc>
-            //  @extends <class-type>
-            //  @deprecated <desc>
-            //  @since <version>
-            //                                         
-            // Type 3: @<symbol> value1, value2, ...
-            //  @mixes <mixin-type>, <mixin-type>, ...
-            //  @implements <interface-type>, <interface-type>, ...
-            //  @conditional <cond1>, <cond2>, ...
-            //
-            // Type 4: @<symbol> { value1 } value2
-            //  @returns {<type>} <desc> | @yields {<type>} <desc>
-            //  @throws {<type>} <desc>                                 [multiple allowed]
-            //
-            // Type 5: @<symbol> { value1 } value2 - value3
-            //  @param {<type>} <name> - <desc>                         [multiple allowed]
-            //  @prop {<type>} <name> - <desc>
-            //  
-            // Type 6: @<symbol> value1 - value2
-            //  @func <name> - <desc>
-            //  @event <name> - <desc>
-            //
-            // Type 7: @<symbol> \n multi-line value
-            //  @remarks                                                
-            //  @example                                                
-            let lines = segment.split('\n'),
-                line = '',
-                symbol = '',
-                symbolData = '',
-                items = [],
-                idx = -1,
-                isIgnore = false,
-                annotation = null,
-                symbols = {},
-                type1 = ['public', 'private', 'private-se', 'protected', 'protected-set', 'abstract', 'virtual', 'override', 'sealed', 'overload', 'optional', 'static', 'async', 'generator', 'readonly'],
-                type2 = ['type', 'extends', 'deprecated', 'since'],
-                type3 = ['mixes', 'implements', 'conditional'],
-                type4 = ['returns', 'yields', 'throws'],
-                type5 = ['param', 'prop'],
-                type6 = ['func', 'event'],
-                type7 = ['example', 'remarks'],
-                multiInstance = ['param', 'throws'];
-            for(let i = 0; i < lines.length; i++) {
-                
-                line = lines[i].trim();
-                if (line !== '/**' && line !== '*/') { // not start/end line
-                    
-                    line = line.substr(1).trim(); // remove *
-                    if (line.substr(0, 1) === '@') { // symbol line
-
-                        // extract symbol
-                        idx = line.indexOf(' ');
-                        if (idx === -1) {
-                            symbol = line.substr(1).trim();
-                            line = '';
-                        } else {
-                            symbol = line.substr(1, idx).trim();
-                            line = line.substr(idx).trim();
-                        }
-
-                        // multi instance error check
-                        if (symbols[symbol] && multiInstance.indexOf(symbol) === -1) {
-                            throw `Multiple instances of @${symbol} are not allowed. (${segment})`;
-                        }
-
-                        // get symbol data
-                        isIgnore = false;                        
-                        if (type1.indexOf(symbol) !== -1) { // @<symbol>
-                            symbolData = true;
-                        } else if (type2.indexOf(symbol) !== -1) { // @<symbol> value
-                            symbolData = line;
-                        } else if (type3.indexOf(symbol) !== -1) { // @<symbol> value1, value2, ...
-                            symbolData = line.split(',').map(item => item.trim());
-                        } else if (type4.indexOf(symbol) !== -1) { // @<symbol> { value1 } value2
-                            symbolData = [];    
-                            items = line.split('}').map(item => item.trim());
-                            symbolData.push(items[0].substr(1).trim()); // remove {
-                            symbolData.push(items[1] || '');                        
-                        } else if (type5.indexOf(symbol) !== -1) { // @<symbol> { value1 } value2 - value3
-                            symbolData = [];
-                            items = line.split('}').map(item => item.trim());
-                            symbolData.push(items[0].substr(1).trim()); // remove {
-                            items = (items[1] || '').split('-').map(item => item.trim());
-                            symbolData.push(items[0] || '');
-                            symbolData.push(items[1] || '');  
-                        } else if (type6.indexOf(symbol) !== -1) { // @<symbol> value1 - value2
-                            symbolData = [];
-                            items = line.split('-').map(item => item.trim());
-                            symbolData.push(items[0] || '');
-                            symbolData.push(items[1] || '');
-                        } else if (type7.indexOf(symbol) !== -1) { // @<symbol> \n multi-line value
-                            idx = i;
-                            symbolData = '';
-                            while(true) {
-                                idx++;
-                                line = lines[idx].trim();
-                                if (line !== '*/' && !line.startsWith('* @')) {
-                                    line = line.substr(1).trim(); // remove *
-                                    symbolData += line + '\n';
-                                } else {
-                                    i = idx - 1;
-                                    break;
-                                }
-                            }
-                        } else {
-                            isIgnore = true;
-                            // unsupported symbol - ignore (don't throw)
-                        }
-
-                        // store symbol data
-                        if (!isIgnore) {
-                            if (multiInstance.indexOf(symbol) !== -1) { // multiple instances
-                                if (!symbols[symbol]) { symbols[symbol] = []; }
-                                symbols[symbol].push(symbolData);
-                            } else { // single instance
-                                symbols[symbol] = symbolData;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // build right type of annotation from segment
-            if (symbols['type']) {
-                annotation = new jsdocs2md.annotations.TypeAnnotation(symbols, typeName, typeType, typeDesc);
-            } else if (symbols['prop']) {
-                annotation = new jsdocs2md.annotations.PropertyAnnotation(symbols); 
-            } else if (symbols['func']) {
-                annotation = new jsdocs2md.annotations.MethodAnnotation(symbols);
-            } else if (symbols['event']) {
-                annotation = new jsdocs2md.annotations.EventAnnotation(symbols);
+        // ns, justName
+        if (typeof ano.ns !== 'undefined') {
+            let items = ano.name.split('.');
+            if (items.length === 1) {
+                ano.ns = '(root)';
+                ano.justName = name;
             } else {
-                //throw `Documentation block could not be idenfied. One of @type/@prop/@func/@event symbols must be added in every block.`;
+                ano.justName = items.splice(items.length - 1, 1)[0];
+                ano.ns = items.join('.');
             }
+        }
 
-            // return
-            return annotation;
-        }, 
-        getAnnotations: (name, type, desc, code) => {
-            // process each segment
-            let segments = jsdocs2md.grepSegments(code),
-                typeAnnotation = null,
-                memberName = {}, // annotation
-                propAnnotations = [], // [name]
-                methodAnnotations = [], // [name]
-                eventAnnotations = [], // [name]
-                a = null,
-                annotations = {
-                    type: null,
-                    members: 0,
-                    constructors: [],
-                    destructors: [],                    
-                    properties: [],
-                    methods: [],
-                    events: []
+        // params
+        if (typeof ano.params !== 'undefined') {
+            let _params = symbols['param'] || [],
+                p = null;
+            for(let _p of _params) { // [ [type, name, desc] ]
+                p = { type: _p[0], name: _p[1], desc: _p[2]};
+                if (!p.type) { throw `Param type must be defined at @param symbol. (${ano.name})`; }
+                if (!p.name) { throw `Param name must be defined at @param symbol. (${ano.name})`; }
+                ano.params.push(p);
+            }
+        }
+
+        // signature
+        let signatureTypesList = '';
+        if (typeof ano.signature !== 'undefined') {        
+            if (ano.params && ano.params.length > 0) {
+                for(let p of ano.params) {
+                    if (signatureTypesList) { signatureTypesList += ', '; }
+                    signatureTypesList += p.type;
+                }
+                ano.signature = `${ano.name}(${signatureTypesList})`;
+            } else {
+                ano.signature = `${ano.name}()`;
+            }
+        }
+
+        // overload
+        if (typeof ano.overload !== 'undefined') {    
+            ano.overload = symbols['overload'] ? true : false;
+            if (ano.overload) { ano.overloadId = signatureTypesList.split(', ').join('-'); }
+        }
+
+        // async, generator
+        if (typeof ano.async !== 'undefined') {    
+            ano.async = symbols['async'] ? true : false;
+            if (!ano.async) {
+                ano.generator = symbols['generator'] ? true : false;
+            }
+        }
+
+        // update modifiers to have one sequence of all modifiers
+        // 1: static
+        // 2: <scope>
+        // 3: async, generator
+        // 4: everything else
+        if(ano.generator) { ano.modifiers.unshift('generator'); }
+        if(ano.async) { ano.modifiers.unshift('async'); }
+        ano.modifiers.unshift(ano.scope);
+        if(ano.static) { ano.modifiers.unshift('static'); }
+
+        // returns
+        if (typeof ano.returns !== 'undefined') {
+            if (symbols['returns']) { 
+                ano.returns = {
+                    type: symbols['returns'][0],
+                    desc: symbols['returns'][1]  || ''
                 };
-            for(let segment of segments) {
-                a = jsdocs2md.parseSegment(segment, name, type, desc);
-                if (a) {
-                    if (a.isType) { // type
-                        if (typeAnnotation) { throw `Only one block can have @type symbol. (${a.name})`; }
-                        typeAnnotation = a;
-                    } else if (a.isMember && a.isProperty) { // member: property
-                        if (memberName[a.name]) { throw `Only one definition can exisit for a member. (${a.name})`; }
-                        memberName[a.name] = a; 
-                        propAnnotations.push(a.name);
-                    } else if (a.isMember && a.isMethod) { // member: method
-                        if (methodAnnotations.indexOf(a.name) !== -1) { 
-                            if(!a.overload) {
-                                throw `Only one definition can exisit for a method unless defined as an overload. (${a.name})`; 
-                            } else {
-                                memberName[a.name].push(a);
-                            }
-                        } else {
-                            if (memberName[a.name]) { throw `Only one definition can exisit for a member (unless its an overload method). (${a.name})`; }
-                            memberName[a.name] = [a];
-                            methodAnnotations.push(a.name);
-                        }
-                    } else if (a.isMember && a.isEvent) { // member: event
-                        if (memberName[a.name]) { throw `Only one definition can exisit for a member. (${a.name})`; }
-                        memberName[a.name] = a;
-                        eventAnnotations.push(a.name);
-                    }
+                if (!ano.returns.type) { throw `Document block must carry return type at @returns symbol or omit the @returns symbol, if there is no return value. (${ano.name})`; }
+            } else {
+                ano.returns = {
+                    type: 'void',
+                    desc: ''
+                };         
+            }
+        }
+
+        // yields
+        if (typeof ano.generator !== 'undefined') {
+            if (ano.generator) {
+                ano.returns = {
+                    type: 'Generator',
+                    desc: ''                
+                };
+                if (!symbols['yields']) { throw `Document block must carry @yields symbol for a generator function. (${ano.name})`; }
+                ano.yields = {
+                    type: symbols['yields'][0],
+                    desc: symbols['yields'][1] || ''
+                };
+                if (!ano.yields.type) { throw `Document block must carry yield type at @yields symbol. (${ano.name})`; }
+            } else {
+                ano.yields = null;
+            }
+        }
+
+        // throws
+        if (typeof ano.throws !== 'undefined') { 
+            let _throws = symbols['throws'] || [], // { type, desc }
+                e = null;
+            if (_throws.length > 0) {
+                for(let _e of _throws) { // [ [type, desc] ]
+                    e = { type: _e[0], desc: _e[1] || ''};
+                    if (!e.type) { throw `Exception type must be defined at @throws symbol. (${ano.name})`; }
+                    ano.throws.push(e);
                 }
             }
-            if (!typeAnnotation) { 
-                throw `There must be at least one block carrying @type symbol.`; 
-            }
+        }
 
+        // optional, conditional
+        if (typeof ano.optional !== 'undefined') { ano.optional = symbols['optional'] ? true : false; }   
+        if (typeof ano.conditional !== 'undefined') { ano.conditional = symbols['conditional'] || []; }
+
+        // since, deprecated, restricted
+        ano.deprecated = symbols['deprecated'] || '';
+        ano.restricted = symbols['restricted'] || '';
+        ano.since = symbols['since'] || '';
+
+        // remarks, example
+        ano.remarks = symbols['remarks'] || '';
+        ano.example = symbols['example'] || '';
+
+        // seealso
+        let _seealso = symbols['seealso'] || [],
+            s = null;
+        for(let _s of _seealso) { // [ [link, name, desc] ]
+            s = { link: _s[0], name: _s[1], desc: _s[2] || ''};
+            if (!s.link) { throw `Seealso link must be defined at @seealso symbol. (${ano.name})`; }
+            if (!s.name) { throw `Seealso name must be defined at @seealso symbol. (${ano.name})`; }
+            ano.seealso.push(s);
+        }
+
+        // back, next
+        if (typeof ano.back !== 'undefined') {
+            let _back = symbols['back'] || [];
+            if (_back.length > 0) { // [link, name, desc]
+                ano.back = {
+                    link: _back[0],
+                    name: _back[1],
+                    desc: _back[2] || ''
+                };
+                if (!ano.back.link) { throw `Back link must be defined at @back symbol. (${ano.name})`; }
+                if (!ano.back.name) { throw `Back name must be defined at @back symbol. (${ano.name})`; }
+            }
+        }
+        if (typeof ano.next !== 'undefined') {
+            let _next = symbols['next'] || [];
+            if (_next.length > 0) { // [link, name, desc]
+                ano.next = {
+                    link: _next[0],
+                    name: _next[1],
+                    desc: _next[2]
+                };
+                if (!ano.next.link) { throw `Next link must be defined at @next symbol. (${ano.name})`; }
+                if (!ano.next.name) { throw `Next name must be defined at @next symbol. (${ano.name})`; }
+            }
+        }
+
+        return ano;
+    };
+    docs.annotations.createFromSymbols = (symbols, name, type) => {
+        let annotation = null;
+        if (symbols['type']) {
+            annotation = docs.annotations.Annotation(symbols, 'type', name, type);
+        } else if (symbols['component']) {
+            annotation = docs.annotations.Annotation(symbols, 'component', name);
+        } else if (symbols['prop']) {
+            annotation = docs.annotations.Annotation(symbols, 'prop');
+        } else if (symbols['func']) {
+            annotation = docs.annotations.Annotation(symbols, 'func');
+        } else if (symbols['event']) {
+            annotation = docs.annotations.Annotation(symbols, 'event');
+        } else {
+            // ignore the block
+            // this is an alternate way of defining the @ignore, otherwise on a known block type
+        }
+
+        // return
+        return annotation;
+    };
+    docs.annotations.getAll = (content, name, type) => {
+        let blocks = docs.jsdocs.extractBlocks(content),
+            mainAnnotation = null,
+            memberName = {}, // annotation
+            propAnnotations = [], // [name]
+            methodAnnotations = [], // [name]
+            eventAnnotations = [], // [name]
+            symbols = [],
+            a = null,
+            annotations = {
+                main: null,
+                members: 0,
+                constructors: [],
+                destructors: [],                    
+                properties: [],
+                methods: [],
+                events: []
+            };
+        for(let block of blocks) { // process each block
+            symbols = docs.jsdocs.extractSymbols(block);
+            a = docs.annotations.createFromSymbols(symbols, name, type);
+            if (a) {
+                if (a.isType) { // type
+                    if (mainAnnotation) { throw `Only one block can have @type/@component symbol. (${a.name})`; }
+                    mainAnnotation = a;
+                } else if (a.isComponent) { // component
+                    if (mainAnnotation) { throw `Only one block can have @type/@component symbol. (${a.name})`; }
+                    mainAnnotation = a;
+                } else if (a.isProperty) { // member: property
+                    if (memberName[a.name]) { throw `Only one definition can exisit for a member. (${a.name})`; }
+                    memberName[a.name] = a; 
+                    propAnnotations.push(a.name);
+                } else if (a.isMethod) { // member: method
+                    if (methodAnnotations.indexOf(a.name) !== -1) { 
+                        if(!a.overload) {
+                            throw `Only one definition can exisit for a method unless defined as an overload. (${a.name})`; 
+                        } else {
+                            memberName[a.name].push(a);
+                        }
+                    } else {
+                        if (memberName[a.name]) { throw `Only one definition can exisit for a member (unless its an overload method). (${a.name})`; }
+                        memberName[a.name] = [a];
+                        methodAnnotations.push(a.name);
+                    }
+                } else if (a.isEvent) { // member: event
+                    if (memberName[a.name]) { throw `Only one definition can exisit for a member. (${a.name})`; }
+                    memberName[a.name] = a;
+                    eventAnnotations.push(a.name);
+                }
+            }
+        }
+        if (mainAnnotation) { 
             // define render ready annotations structure
             // type
-            annotations.type = typeAnnotation;
+            annotations.type = mainAnnotation.isType ? mainAnnotation : null;
+
+            // component
+            annotations.component = mainAnnotation.isComponent ? mainAnnotation : null;          
 
             // properties
             propAnnotations.sort(); // sort by name
             for(let propName of propAnnotations) {
                 annotations.properties.push(memberName[propName]);
-                annotations.members++;
             }
 
             // methods
@@ -868,13 +1132,10 @@
             for(let methodName of methodAnnotations) {
                 if (methodName === 'construct') { // constructor
                     annotations.constructors.push(...memberName[methodName]);
-                    annotations.members++;
                 } else if (methodName === 'dispose') { // destructor
                     annotations.destructors.push(...memberName[methodName]);
-                    annotations.members++;
                 } else { // others
                     annotations.methods.push(...memberName[methodName]);
-                    annotations.members++;
                 }
             }
 
@@ -893,692 +1154,1174 @@
             eventAnnotations.sort(); // sort by name
             for(let eventName of eventAnnotations) {
                 annotations.events.push(memberName[eventName]);
-                annotations.members++;
             }
 
-            return annotations;
-        }, 
-        sections: {
-            support: {
-                getId: (name, sig) => {
-                    sig = sig.replace('(', '-').replace(')', '-');
-                    sig = replaceAll(sig, ', ', '-');
-                    return name + '-' + sig;
-                },
-                getMembersId: (name) => {
-                    return name + '-' + 'members';
-                },
-                getNameAndLink: (typeName, memberName) => {
-                    let section = '';
-                    const support = jsdocs2md.sections.support;
-                    
-                    //section += `\n\n<a href="#${support.getMembersId(typeName)}" id="${support.getId(typeName, memberName)}">**${memberName}**</a>`; // this does not work on GFM (Github Flavored Markdown)
-                    section += `\n\n<a id="${support.getId(typeName, memberName)}"></a>[**${memberName}**](#${support.getMembersId(typeName)}) &nbsp; `; // and this does not work in VSCode Preview
-
-                    return section;
-                },
-                getDesc: (ano, isAddType) => {
-                    let section = '';
-
-                    if (ano.desc) {
-                        if (isAddType) {
-                            section += `> \` ${ano.type} \` &nbsp; ${ano.desc}\n`;
-                        } else {
-                            section += `> ${ano.desc}\n`;
-                        }
-                        section += `>\n`;
-                    }
-
-                    return section;
-                },
-                getScopeAndModifiers: (ano, isStatic, isAsync) => {
-                    let section = '';
-
-                    // scope
-                    section += ` \` ${ano.scope} \``
-
-                    // others
-                    if (isStatic && ano.static) { section += ' ` static ` '; }
-                    if (isAsync && ano.async) { section += ' ` async ` '; }
-                   
-                    // modifiers
-                    if (ano.modifiers.length > 0) {
-                        for (let m of ano.modifiers) {
-                            section += ` \` ${m} \` `;
-                        }
-                    }
-
-                    section += `\n`;
-
-                    return section;
-                },
-                getParams: (ano) => {
-                    let section = '';
-
-                    if (ano.params.length > 0) {
-                        section += `> **Parameters**\n`;
-                        section += `>\n`;
-                        for(let p of ano.params) {
-                            section += `> * ${p[1]} &nbsp; \` ${p[0]} \` &nbsp; ${p[2]}\n`;
-                        }
-                        section += `>\n`;
-                    }
-
-                    return section;
-                },
-                getReturns: (ano) => {
-                    let section = '';
-
-                    section += '> **Returns**\n';
-                    section += `>\n`;
-                    section += `> \` ${ano.returns.type} \` &nbsp; ${ano.returns.desc}\n`;
-                    section += `>\n`;
-
-                    return section;
-                },
-                getYields: (ano) => {
-                    let section = '';
-
-                    if (ano.generator && ano.yields) {
-                        section += '> **Yields** \n>\n';
-                        section += `> \` ${ano.yields.type} \` &nbsp; ${ano.yields.desc}\n`;
-                        section += `>\n`;
-                    }
-
-                    return section;
-                },                
-                getExceptions: (ano) => {
-                    let section = '';
-                    
-                    if(ano.throws.length > 0) {
-                        section += `> **Exceptions**\n`;
-                        section += `>\n`;
-                        for(let t of ano.throws) {
-                            section += `> * \` ${t[0]} \` &nbsp; ${t[1]}\n`;
-                        }
-                        section += `>\n`;
-                    }
-
-                    return section;
-                },
-                getRemarks: (ano) => {
-                    let section = '';
-
-                    if (ano.remarks) {
-                        section += '> **Remarks**\n';
-                        section += `>\n`;
-                        ano.remarks = '> ' + ano.remarks;
-                        section += replaceAll(ano.remarks, '\n', '\n> ');
-                        section += `>\n`;
-                    }                    
-
-                    return section;
-                },
-                getExample: (ano) => {
-                    let section = '';
-
-                    if (ano.example) {
-                        section += '> **Example**\n';
-                        section += `>\n`;
-                        ano.example = '> ' + ano.example;
-                        section += replaceAll(ano.example, '\n', '\n> ');
-                        section += `>\n`;
-                    }  
-
-                    return section;
-                },
-                getAdditionalInfo: (type, ano) => {
-                    let section = '';
-
-                    if ((type === 'Interface' && ano.optional) || ano.conditional.length > 0 || ano.deprecated || ano.since) {
-                        section += '> **Additional Information**\n';
-                        section += `>\n`;
-                        section += ano.since ? `> * _Since:_ ${ano.since}\n` : '';
-                        section += ano.deprecated ? `> * _Deprecated:_ ${ano.deprecated}\n` : '';
-                        section += ano.optional ? `> * _Optional:_ This member is optional and interface's compliance will pass even if this member is not implemented by the class.\n` : '';
-                        section += ano.conditional.length > 0 ? `> * _Conditional:_ This member is conditional and will be present only when all of the mentioned runtime environmental conditions are met: **${ano.conditional.join('**, **')}**\n` : '';
-                        section += `>\n`;
-                    }   
-
-                    return section;                    
-                }
-            },            
-            header: (ano) => {
-                let section = '';
-
-                // name and link
-                section += `</br>\n<h3 id="${ano.type.name}"><a href="#types">${ano.type.name}</a></h3>\n\n`;
-                
-                // type
-                section += `**${ano.type.type}** &nbsp;`;
-
-                // scope, static
-                section += ` \` ${ano.type.scope} \``
-                if (ano.type.static) { section += ' ` static ` '; }
-
-                // modifiers
-                if (ano.type.modifiers.length > 0) {
-                    for (let m of ano.type.modifiers) {
-                        section += ` \` ${m} \` `;
-                    }
-                }
-
-                // extends, mixes, implements
-                if (ano.type.extends || ano.type.mixes.length > 0 || ano.type.implements.length > 0) {
-                    section += '\n\n';
-                    if (ano.type.extends) { 
-                        section += `_extends_ <a href="${ano.type.extends}">${ano.type.extends}</a> &nbsp; `;
-                    }
-                    if (ano.type.mixes.length > 0) {
-                        section += `_mixes_ `;
-                        let i = -1;
-                        for(let mix of ano.type.mixes) {
-                            i++;
-                            if (i > 0) { section += ', '; }
-                            section += `<a href="#${mix}">${mix}</a>`;
-                        }  
-                        section += ` &nbsp; `;
-                    }
-                    if (ano.type.implements.length > 0) {
-                        section += `_implements_ `;
-                        let i = -1;
-                        for(let im of ano.type.implements) {
-                            i++;
-                            if (i > 0) { section += ', '; }
-                            section += `<a href="#${im}">${im}</a>`;
-                        }  
-                        section += ` &nbsp; `;
-                    }                    
-                }
-
-                // line
-                section += `\n\n***\n\n`;
-
-                return section;
-            },
-            desc: (ano) => {
-                let section = '';
-
-                // desc
-                if (ano.type.desc) {
-                    section += `${ano.type.desc}`;
-                    section += '\n\n';
-                }
-
-                return section;
-            },
-            members: (ano) => {
-                let section = '';
-
-                // members
-                if (ano.members > 0) {
-                    const support = jsdocs2md.sections.support;
-
-                    section += '\n\n';
-                    section += `<span id="${support.getMembersId(ano.type.name)}">**Members**</span>\n\n`;
-                    section += `Name | Description\n`;
-                    section += `:---|:---\n`;
-
-                    // constructors
-                    if (ano.constructors.length > 0) {
-                        section += `**Constructors** | \n`;
-                        for (let ano_c of ano.constructors) {
-                            section += `<a href="#${support.getId(ano.type.name, ano_c.signature)}">${ano_c.signature}</a>`;
-                            section += `| ${ano_c.desc}\n`;
-                        }
-                    }
-
-                    // destructors
-                    if (ano.destructors.length > 0) {
-                        section += `**Destructors** | \n`;
-                        for (let ano_d of ano.destructors) {
-                            section += `<a href="#${support.getId(ano.type.name, ano_d.signature)}">${ano_d.signature}</a>`;
-                            section += `| ${ano_d.desc}\n`;
-                        }
-                    }
-
-                    // properties
-                    if (ano.properties.length > 0) {
-                        section += `**Properties** | \n`;
-                        for (let ano_p of ano.properties) {
-                            section += `<a href="#${support.getId(ano.type.name, ano_p.name)}">${ano_p.name}</a>` + (ano_p.static ? ' &nbsp; ` static `': '');
-                            section += `| ${ano_p.desc}\n`;
-                        }
-                    }
-
-                    // functions
-                    if (ano.methods.length > 0) {
-                        section += `**Functions** | \n`;
-                        for (let ano_m of ano.methods) {
-                            section += `<a href="#${support.getId(ano.type.name, ano_m.signature)}">${ano_m.signature}</a>` + (ano_m.static ? ' &nbsp; ` static `' : '');
-                            section += `| ${ano_m.desc}\n`;
-                        }
-                    }
-
-                    // events
-                    if (ano.events.length > 0) {
-                        section += `**Events** | \n`;
-                        for (let ano_e of ano.events) {
-                            section += `<a href="#${support.getId(ano.type.name, ano_e.signature)}">${ano_e.signature}</a>`;
-                            section += `| ${ano_e.desc}\n`;
-                        }
-                    }
-                }
-               
-                return section;
-            },
-            details: (ano) => {
-                let section = '';
-
-                // remarks
-                if (ano.type.remarks) {
-                    section += '\n\n';
-                    section += '**Remarks**\n\n';
-                    section += ano.type.remarks;
-                }
-
-                // example
-                if (ano.type.example) {
-                    section += '\n\n';
-                    section += '**Example**\n\n';
-                    section += ano.type.example;
-                }
-
-                return section;
-            },
-            constructors: (ano) => {
-                let section = '';
-
-                if (ano.constructors.length > 0) {
-                    const support = jsdocs2md.sections.support;
-
-                    section += '\n\n**Constructors**\n\n';
-                    for (let ano_c of ano.constructors) {
-                        section += support.getNameAndLink(ano.type.name, ano_c.signature); // name and link
-                        section += support.getScopeAndModifiers(ano_c); // scope
-                        section += support.getDesc(ano_c); // desc
-                        section += support.getParams(ano_c); // params
-                        section += support.getExceptions(ano_c); // throws
-                        section += support.getRemarks(ano_c); // remarks
-                        section += support.getExample(ano_c); // example
-                        section += support.getAdditionalInfo(ano.type.type, ano_c); // additional information
-                    }
-                }
-
-                return section;
-            },
-            destructors: (ano) => {
-                let section = '';
-
-                if (ano.destructors.length > 0) {
-                    const support = jsdocs2md.sections.support;
-
-                    section += '\n\n**Destructors**\n\n';
-                    for (let ano_d of ano.destructors) {
-                        section += support.getNameAndLink(ano.type.name, ano_d.signature); // name and link
-                        section += support.getScopeAndModifiers(ano_d); // scope
-                        section += support.getDesc(ano_d); // desc
-                        section += support.getParams(ano_d); // params
-                        section += support.getExceptions(ano_d); // throws
-                        section += support.getRemarks(ano_d); // remarks
-                        section += support.getExample(ano_d); // example
-                        section += support.getAdditionalInfo(ano.type.type, ano_d); // additional information
-                    }
-                }
-
-                return section;
-            },    
-            properties: (ano) => {
-                let section = '';
-
-                if (ano.properties.length > 0) {
-                    const support = jsdocs2md.sections.support;
-
-                    section += '\n\n**Properties**\n\n';
-                    for (let ano_p of ano.properties) {
-                        section += support.getNameAndLink(ano.type.name, ano_p.name); // name and link
-                        section += support.getScopeAndModifiers(ano_p, true); // scope, static
-                        section += support.getDesc(ano_p, true); // type, desc
-                        section += support.getRemarks(ano_p); // remarks
-                        section += support.getExample(ano_p); // example
-                        section += support.getAdditionalInfo(ano.type.type, ano_p); // additional information
-                    }
-                }
-
-                return section;
-            },  
-            methods: (ano) => {
-                let section = '';
-
-                if (ano.methods.length > 0) {
-                    const support = jsdocs2md.sections.support;
-
-                    section += '\n\n**Functions**\n\n';
-                    for (let ano_m of ano.methods) {
-                        section += support.getNameAndLink(ano.type.name, ano_m.signature); // name and link
-                        section += support.getScopeAndModifiers(ano_m, true, true); // scope, static, async
-                        section += support.getDesc(ano_m); // desc
-                        section += support.getParams(ano_m); // params
-                        section += support.getReturns(ano_m); // returns
-                        section += support.getYields(ano_m); // yields
-                        section += support.getExceptions(ano_m); // throws
-                        section += support.getRemarks(ano_m); // remarks
-                        section += support.getExample(ano_m); // example
-                        section += support.getAdditionalInfo(ano.type.type, ano_m); // additional information
-                    }
-                }
-
-                return section;
-            },  
-            events: (ano) => {
-                let section = '';
-
-                if (ano.events.length > 0) {
-                    const support = jsdocs2md.sections.support;
-
-                    section += '\n\n**Events**\n\n';
-                    for (let ano_e of ano.events) {
-                        section += support.getNameAndLink(ano.type.name, ano_e.signature); // name and link
-                        section += support.getScopeAndModifiers(ano_e); // scope
-                        section += support.getDesc(ano_e); // desc
-                        section += support.getParams(ano_e); // params
-                        section += support.getRemarks(ano_e); // remarks
-                        section += support.getExample(ano_e); // example
-                        section += support.getAdditionalInfo(ano.type.type, ano_e); // additional information
-                    }
-                }
-
-                return section;
-            },   
-            footer: (ano) => {
-                let section = '';
-
-                // remarks
-                if (ano.type.deprecated || ano.type.since) {
-                    section += '\n\n';
-                    section += '**Additional Information**\n\n';
-                    section += ano.type.since ? `* _Since:_ ${ano.type.since}` : '';
-                    section += ano.type.deprecated ? `* _Deprecated:_ ${ano.type.deprecated}` : '';
-                }
-
-                // line
-                section += `\n\n`;
-
-                return section;
-            }                                                       
-        },
-        render: (ano) => {
-            // render supports jsdoc (https://jsdoc.app/) style documentation with some changed and some similar meaning symbols
-            // Refer comments inside: TypeAnnotation, PropertyAnnotation, MethodAnnotation, EventAnnotation for exact details of supported symbols
- 
-            // render sections
-            let doc = '';
-            doc += jsdocs2md.sections.header(ano);
-            doc += jsdocs2md.sections.desc(ano);
-            doc += jsdocs2md.sections.members(ano);
-            doc += jsdocs2md.sections.details(ano);
-            doc += jsdocs2md.sections.constructors(ano);
-            doc += jsdocs2md.sections.destructors(ano);
-            doc += jsdocs2md.sections.properties(ano);
-            doc += jsdocs2md.sections.methods(ano);
-            doc += jsdocs2md.sections.events(ano);
-            doc += jsdocs2md.sections.footer(ano);
-
-            // return
-            return doc;
+            // members count
+            annotations.members = annotations.constructors.length + annotations.properties.length + annotations.methods.length + annotations.events.length + annotations.destructors.length;
+        } else {
+            throw `At least one block must contain @type/@component symbol. ${name}`;
         }
+
+        return annotations;
     };
-    const asm2md = {
-        render: {
-            header: (options) => {
-                let section = asm_doc_header;
 
-                section = replaceAll(section, '<<title>>',  options.packageJSON.title);
-                section = replaceAll(section, '<<repo>>',  options.packageJSON.link || options.packageJSON.repository.url || '');
-                section = replaceAll(section, '<<desc>>',  options.current.ado.desc);
-                section = replaceAll(section, '<<copyright>>', options.current.ado.copyright.replace('(C)', '&copy;').replace('(c)', '&copy;'));
-                section = replaceAll(section, '<<license>>', options.current.ado.license || 'undefined license');
+    // links rendering
+    docs.render.link.getIdOfName = (name, ...prefix) => {
+        return prefix.join('-') + '-' + replaceAll(name, '.', '-');
+    };
+    docs.render.link.getFileOfName = (name, ...prefix) => {
+        return docs.render.link.getIdOfName(name, ...prefix) + '.md';
+    };
+    docs.render.link.sectionEntry = (type) => {
+        let link = '',
+            isLocal = options.docsConfig.oneDoc;
+        switch(type) {
+            case 'components': link = '[Components]' + (isLocal ? '(#components)' : '(./components.md)'); break;
+            case 'namespaces': link = '[Namespaces]' + (isLocal ? '(#namespaces)' : '(./namespaces.md)'); break;
+            case 'types': link = '[Types]' + (isLocal ? '(#types)' : '(./types.md)'); break;
+            case 'resources': link = '[Resources]' + (isLocal ? '(#resources)' : '(./resources.md)'); break;
+            case 'assets': link = '[Assets]' + (isLocal ? '(#assets)' : '(./assets.md)'); break;
+            case 'routes': link = '[Routes]' + (isLocal ? '(#routes)' : '(./routes.md)'); break;
+        }
+        return link;
+    };
+    docs.render.link.sectionHeader = (type) => {
+        let link = '',
+            isLocal = options.docsConfig.oneDoc;
+        switch(type) {
+            case 'components': link = isLocal ? '[Components](#section-header)' : 'Components'; break;
+            case 'namespaces': link = isLocal ? '[Namespaces](#section-header)' : 'Namespaces'; break;
+            case 'types': link = isLocal ? '[Types](#section-header)' : 'Types'; break;
+            case 'resources': link = isLocal ? '[Resources](#section-header)' : 'Resources'; break;
+            case 'assets': link = isLocal ? '[Assets](#section-header)' : 'Assets'; break;
+            case 'routes': link = isLocal ? '[Routes](#section-header)' : 'Routes'; break;
+        }
+        return link;                    
+    };
+    docs.render.link.itemEntry = (name, type) => {
+        let link = '',
+            itemId = '',
+            isLocal = options.docsConfig.oneDoc;
+            
+        itemId = (isLocal ? '#' + docs.render.link.getIdOfName(name, type) : './' + docs.render.link.getFileOfName(name, type));
+        link = `<a href="${itemId}">${name}</a>`;
+        
+        return link;
+    };
+    docs.render.link.itemHeader = (name, type) => {
+        let link = '',
+            backLink = '',
+            isLocal = options.docsConfig.oneDoc;
 
-                return section;
-            },
-            assembly: (options) => {
-                let section = asm_doc_assembly;
+        switch(type) {
+            case 'component': backLink = (isLocal ? '#components' : './components.md'); break;
+            case 'type': backLink = (isLocal ? '#types' : './types.md'); break;
+        }
+        link = `<h3 id="${docs.render.link.getIdOfName(name, type)}"><a href="${backLink}">${name}</a></h3>`;
 
-                section = replaceAll(section, '<<asm>>', options.current.ado.name);
-                section = replaceAll(section, '<<version>>', options.current.ado.version);
-                section = replaceAll(section, '<<lupdate>>', options.current.ado.lupdate);
-                section = replaceAll(section, '<<using_asm>>', `${options.packageJSON.link}/#/using-flair-assembly`);
+        return link;
+    };
+    docs.render.link.itemList = (items, type) => {
+        let list = '',
+            i = -1;
+
+        if (items.length > 0) {
+            for(let item of items) {
+                i++;
+                if (i > 0) { list += ', '; }
+                list += docs.render.link.itemEntry(item, type);
+            }  
+        }
+
+        return list;
+    };
+    docs.render.link.item = (item, prefix, suffix, isSkipDesc) => {
+        let link = '';
+
+        // item = { link, name, desc }
+        // links can be:
+        //  #something
+        //  ./something
+        //  https:// something
+        //  http:// something
+        //  T:something      <-- this means link to a type,
+        //  C:something      <-- this means link to a component
+        if (item.link.startsWith('T:')) {
+            link = docs.render.link.itemEntry(item.link.replace('T:', ''), 'type');
+        } else if (item.link.startsWith('C:')) {
+            link = docs.render.link.itemEntry(item.link.replace('C:', ''), 'component');
+        } else {
+            link = `<a href="${item.link}">${prefix || ''} ${item.name} ${suffix || ''}</a>`;
+        }
+        link = `${link} ${isSkipDesc ? '' : '&nbsp;' + item.desc}`;
+
+        return link;
+    };
+    docs.render.link.getLinkInfoOfMember = (member, parent, parentType) => {
+        let link = '',
+            id = '',
+            name = '',
+            parentName = docs.render.link.getIdOfName(parent.name, parentType);
+        
+        if (member.isMethod) {
+            if (member.overload) {
+                id = docs.render.link.getIdOfName(member.name, parentName, 'method', member.overloadId);
+            } else {
+                id = docs.render.link.getIdOfName(member.name, parentName, 'method');
+            }
+            name = member.signature;
+        } else if (member.isProperty) {
+            id = docs.render.link.getIdOfName(member.name, parentName, 'property');
+            name = member.name;
+        } else if (member.isEvent) {
+            id = docs.render.link.getIdOfName(member.name, parentName, 'event');
+            name = member.name;
+        }
+
+        return {
+            id: id,
+            name: name
+        };
+    };
+    docs.render.link.memberEntry = (member, parent, parentType) => {
+        let link = '',
+            linkInfo = docs.render.link.getLinkInfoOfMember(member, parent, parentType);
+        
+        link = `<a href="#${linkInfo.id}">${linkInfo.name}</a>`;
+
+        return link;
+    };
+    docs.render.link.memberHeader = (member, backLink) => {
+        let link = '',
+            name = '';
+        
+        if (member.isMethod) {
+            name = member.signature;
+        } else if (member.isProperty) {
+            name = member.name;
+        } else if (member.isEvent) {
+            name = member.signature;
+        }
+        link = `<a href="#${backLink}">${name}</a>`;
+
+        return link;
+    };    
+
+    // sections rendering
+    docs.render.sections.file_header = () => {
+        let section = '';
+
+        // 0: block start
+        section += `\n<span name="file_header" id="file-header">\n`;
+
+        // // 1: title
+        // title - desc
+        // copyright
+        section += `<small><small>\n`;
+        section += `\n**[${options.packageJSON.title}](${options.packageJSON.link || options.packageJSON.repository.url || '#'})** - ${options.current.ado.desc}\n`;
+        section += `</br>Copyright ${options.current.ado.copyright.replace('(C)', '&copy;').replace('(c)', '&copy;')}.\n`;
+        if (options.current.ado.license) { section += `Distributed under ${options.current.ado.license}\n`; }
+        section += `</small></small>\n`;
+
+        // 2: block end
+        section += `\n</span>\n`;
+        
+        return section;
+    };
+    docs.render.sections.asm_header = () => {
+        let section = '';
+
+        // 0: block start
+        section += `\n<span name="asm_header" id="asm-header">\n`;
+
+        // 1: asm info
+        // name
+        // Version version | lupdate
+        // 
+        section += '\n';
+        if (options.docsConfig.oneDoc) {
+            section += `# <u>${options.current.ado.name}</u>\n`;
+        } else {
+            section += `# <u>[${options.current.ado.name}](../index.md)</u>\n`;
+        }
+        section += '<small>\n';
+        section += `Version ${options.current.ado.version} | ${options.current.ado.lupdate}\n`;
+        section += '</small>\n';
+
+        // 2: asm files
+        // file (minified, gzipped)
+        let jsFile = options.current.asm.replace(options.current.dest + '/', ''),
+            minFile = options.current.asm.replace('.js', '.min.js'),
+            gzFile = options.current.asm.replace('.js', '.min.js.gz');
+        let fileList = `[${jsFile}](./${jsFile})`;
+        fileList += ' (' + Math.round(fsx.statSync(options.current.asm).size / 1024) + 'k';
+        if (fsx.existsSync(minFile)) {
+            fileList += ', ' + Math.round(fsx.statSync(minFile).size / 1024) + `k [minified](${jsFile.replace('.js', '.min.js')})`;
+        }
+        if (fsx.existsSync(gzFile)) {
+            fileList += ', ' + Math.round(fsx.statSync(gzFile).size / 1024) + `k [gzipped](${jsFile.replace('.js', '.min.js.gz')})`;
+        }
+        fileList += ')';
+        section += '</br>\n';
+        section += '<small>\n';
+        section += `\n${fileList}\n`;
+        section += '</small>\n';
+
+        // 3: block end
+        section += `\n</span>\n`;
+        
+        return section;                  
+    };
+    docs.render.sections.sections_header = () => {
+        let section = '',
+            prefix = '';
+
+        // 0: block start
+        section += `\n<span name="section_header" id="section-header">\n`;
+        section += `\n\n`;
+
+        // 1: sections list
+        // section || section || section 
+        if (options.docsConfig.include.components && options.current.docComponents.length > 0) { 
+            section += prefix + docs.render.link.sectionEntry('components'); prefix = ' &nbsp;||&nbsp; ';
+        }
+        if (options.docsConfig.include.namespaces) { 
+            section += prefix + docs.render.link.sectionEntry('namespaces'); prefix = ' &nbsp;||&nbsp; ';
+        }
+        if (options.docsConfig.include.types && options.current.ado.types.length > 0) { 
+            section += prefix + docs.render.link.sectionEntry('types'); prefix = ' &nbsp;||&nbsp; ';
+        }
+        if (options.docsConfig.include.resources && options.current.ado.resources.length > 0) { 
+            section += prefix + docs.render.link.sectionEntry('resources'); prefix = ' &nbsp;||&nbsp; ';
+        }
+        if (options.docsConfig.include.assets && options.current.ado.assets.length > 0) { 
+            section += prefix + docs.render.link.sectionEntry('assets'); prefix = ' &nbsp;||&nbsp; ';
+        }
+        if (options.docsConfig.include.routes && options.current.ado.routes.length > 0) { 
+            section += prefix + docs.render.link.sectionEntry('routes'); prefix = ' &nbsp;||&nbsp; ';
+        }
+
+        // 2: block end
+        section += `\n</span>\n`;
+
+        return section;                  
+    };
+    docs.render.sections.items = (type) => {
+        let section = '',
+            ano = null,
+            api = '',
+            itemsType = '',
+            isContinue = false;
+        
+        switch(type) {
+            case 'type': 
+                isContinue = options.docsConfig.include.types && options.current.ado.types.length !== 0; 
+                itemsType = 'types';
+                break;     
+            case 'component': 
+                isContinue = (options.docsConfig.include.components && options.current.docComponents.length !== 0); 
+                itemsType = 'components';
+                break;
+        }
+        if (!isContinue) { return ''; }
+
+        // file header
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section = docs.render.sections.file_header();
+            section += docs.render.sections.asm_header();
+        }
+
+        // 0: block start
+        section += `<span name="asm_${itemsType}" id="asm-${itemsType}">\n`;
+        section += '\n&nbsp;\n';
+
+        // 1: title
+        // title
+        // 
+        section += `## ${docs.render.link.sectionHeader(itemsType)}\n`;
+
+        // 2: members list
+        //
+        // Name | Description
+        // ---- | -----------
+        // ...  | ...
+        const processItems = (title, items, isStatic) => {
+            let _api = '';
+
+            // title
+            if (title) { section += `**${title}** | &nbsp; \n`; }
+
+            // list
+            for (let ano of items) {
+                // ano[type] will resolve to ano.type OR ano.component because type is either 'type' or 'component'
+                section += `${docs.render.link.itemEntry(ano[type].name, type)} ${(isStatic && ano[type].static ? ' &nbsp; \` static \`': '')} | ${ano[type].desc}\n`;
                 
-
-                // file list
-                let jsFile = options.current.asm.replace(options.current.dest + '/', ''),
-                    minFile = options.current.asm.replace('.js', '.min.js'),
-                    gzFile = options.current.asm.replace('.js', '.min.js.gz');
-                let fileList = `[${jsFile}](./${jsFile})`;
-                fileList += ' (' + Math.round(fsx.statSync(options.current.asm).size / 1024) + 'k';
-                if (fsx.existsSync(minFile)) {
-                    fileList += ', ' + Math.round(fsx.statSync(minFile).size / 1024) + `k [minified](${jsFile.replace('.js', '.min.js')})`;
-                }
-                if (fsx.existsSync(gzFile)) {
-                    fileList += ', ' + Math.round(fsx.statSync(gzFile).size / 1024) + `k [gzipped](${jsFile.replace('.js', '.min.js.gz')})`;
-                }
-                fileList += ')';
-                section = replaceAll(section, '<<file_list>>', fileList);
-
-                // availableSections
-                let availableSections = '[Namespaces](#namespaces)';
-                if (options.current.ado.types.length > 0) { availableSections += ' &nbsp;||&nbsp; [Types](#types)'; }
-                if (options.current.ado.resources.length > 0) { availableSections += ' &nbsp;||&nbsp; [Resources](#resources)'; }
-                if (options.current.ado.assets.length > 0) { availableSections += ' &nbsp;||&nbsp; [Assets](#assets)'; }
-                if (options.current.ado.routes.length > 0) { availableSections += ' &nbsp;||&nbsp; [Routes](#routes)'; }
-                section = section.replace('<<sections>>', availableSections);
-
-                return section;
-            },
-            ns: (options) => {
-                let section = asm_doc_ns;
-
-                if (options.current.ado.ns.length > 0) {
-                    let nsList = '';
-                    for(let thisNS of options.current.ado.ns) {
-                        nsList += '<<name>> | <<desc>>'
-                            .replace('<<name>>', thisNS.name)
-                            .replace('<<desc>>', thisNS.desc + '\n');
-                    }
-                    section = section.replace('<<list>>', nsList);
+                // api (either append for oneDoc, or create a file for the type)
+                _api = docs.render.sections.api(ano, type);
+                if (options.docsConfig.oneDoc) {
+                    api += _api;
                 } else {
-                    section = '';
-                }
+                    if (_api) {
+                        let _api_section = '';
 
-                return section;
-            },
-            types: (options) => {
-                let section = asm_doc_types;
+                        // file header
+                        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+                            _api_section = docs.render.sections.file_header();
+                            _api_section += docs.render.sections.asm_header();
+                        }
+    
+                        // _api
+                        _api_section += _api;
+    
+                        // file footer
+                        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+                            _api_section += docs.render.sections.file_footer();
+                        }  
+                        docs.createFile(_api_section, docs.render.link.getFileOfName(ano[type].name, type));
 
-                const processMembers = (ary, isStatic) => {
-                    let _list = '',
                         _api = '';
-
-                    // list
-                    for (let o of ary) {
-                        _list += `<a href="#<<name>>"><<name>></a>${(isStatic && o.type.static ? ' &nbsp; \` static \`': '')} | <<desc>>`
-                        .replace('<<name>>', o.type.name).replace('<<name>>', o.type.name)
-                        .replace('<<desc>>', o.type.desc) + '\n';
-                        
-                        // api
-                        _api += jsdocs2md.render(o);
                     }
+                }
+            }
+        };        
+        section += '\n';
+        section += `Name | Description\n`;
+        section += `:---|:---\n`;
+        switch(type) {
+            case 'type':
+                // get lists to process
+                let classes = [],
+                    interfacees = [],
+                    mixins = [],
+                    structs = [],
+                    enums = [];
+                for(let thisItem of options.current.ado.types) {
+                    // get annotations written in code
+                    ano = docs.annotations.getAll(options.current.docTypes[thisItem.name], thisItem.name, thisItem.type);
+        
+                    // sort out in different buckets based on type of the type
+                    if (ano.type.isClass) {
+                        classes.push(ano);
+                    } else if (ano.type.isInterface) {
+                        interfacees.push(ano);
+                    } else if (ano.type.isMixin) {
+                        mixins.push(ano);
+                    } else if (ano.type.isStruct) {
+                        structs.push(ano);
+                    } else if (ano.type.isEnum) {
+                        enums.push(ano);
+                    }
+                }
+
+                // process all items
+                if (classes.length > 0) { processItems('Classes', classes, true); }
+                if (interfacees.length > 0) { processItems('Interfaces', interfacees); }
+                if (mixins.length > 0) { processItems('Mixins', mixins); }
+                if (structs.length > 0) { processItems('Structures', structs); }
+                if (enums.length > 0) { processItems('Enums', enums); }
+                break;
+            case 'component':
+                // get list to process
+                let constructibles = [],
+                    nonconstructibles = [],
+                    objects = [];
+                for(let thisItem of options.current.docComponents) {
+                    // get annotations written in code
+                    ano = docs.annotations.getAll(thisItem.content, thisItem.name);
                     
-                    return { list: _list, api: _api };
-                };
-
-                if (options.current.ado.types.length > 0) {
-                    let tyList = '',
-                        tyApi = '',
-                        tyCode = '',
-                        rslt = null,
-                        ano = null,
-                        _class = [],
-                        _interface = [],
-                        _mixin = [],
-                        _struct = [],
-                        _enum = [];
-                    for(let thisTyp of options.current.ado.types) {
-                        ano =jsdocs2md.getAnnotations(thisTyp.name, thisTyp.type, thisTyp.desc, options.current.docTypes[thisTyp.name]);
-                        if (ano.type.isClass) {
-                            _class.push(ano);
-                        } else if (ano.type.isInterface) {
-                            _interface.push(ano);
-                        } else if (ano.type.isMixin) {
-                            _mixin.push(ano);
-                        } else if (ano.type.isStruct) {
-                            _struct.push(ano);
-                        } else if (ano.type.isEnum) {
-                            _enum.push(ano);
-                        }
+                    // sort out in different buckets based on type of the type
+                    if (ano.component.isConstructible) {
+                        constructibles.push(ano);
+                    } else if (ano.component.isNonConstructible) {
+                        nonconstructibles.push(ano);
+                    } else if (ano.component.isObject) {
+                        objects.push(ano);
                     }
-
-                    if (_class.length > 0) {
-                        tyList += '**Classes** | \n';
-                        rslt = processMembers(_class, true);
-                        tyList += rslt.list; tyApi += rslt.api;
-                    }
-
-                    if (_interface.length > 0) {
-                        tyList += '**Interfaces** | \n';
-                        rslt = processMembers(_interface);
-                        tyList += rslt.list; tyApi += rslt.api;
-                    }
-
-                    if (_mixin.length > 0) {
-                        tyList += '**Mixins** | \n';
-                        rslt = processMembers(_mixin);
-                        tyList += rslt.list; tyApi += rslt.api;
-                    }       
-                    
-                    if (_struct.length > 0) {
-                        tyList += '**Structures** | \n';
-                        rslt = processMembers(_struct);
-                        tyList += rslt.list; tyApi += rslt.api;
-                    }           
-                    
-                    if (_enum.length > 0) {
-                        tyList += '**Enums** | \n';
-                        rslt = processMembers(_enum);
-                        tyList += rslt.list; tyApi += rslt.api;
-                    }                       
-
-                    section = section.replace('<<list>>', tyList).replace('<<api>>', tyApi);
-                } else {
-                    section = '';
                 }
 
-                return section;
-            },
-            resources: (options) => {
-                let section = asm_doc_resources;
+                // process all items
+                if (constructibles.length > 0) { processItems('Costructibles', constructibles); }
+                if (nonconstructibles.length > 0) { processItems('Functions', nonconstructibles); }
+                if (objects.length > 0) { processItems('Objects', objects); }
+        }
+        
+        // 3: member details
+        if (api) {
+            section += '\n\n';
+            section += api;
+        }
 
-                if (options.current.ado.resources.length > 0) {
-                    let resList = '',
-                        resType = '',
-                        resSize = '';
-                    for(let thisRes of options.current.ado.resources) {
-                        resType = (thisRes.type ? ` &nbsp; \` ${thisRes.type} \`` : '');
-                        resSize = (thisRes.size && thisRes.size !== '0k' && thisRes.size !== '1k' ? ` &nbsp; \` ${thisRes.size} \`` : ''); // size is shown for >1k resources
-                        resList += '<<name>> | <<desc>>'
-                            .replace('<<name>>', thisRes.name + resType + resSize)
-                            .replace('<<desc>>', thisRes.desc || '&nbsp;') + '\n';
-                    }
-                    section = section.replace('<<list>>', resList);
-                } else {
-                    section = '';
+        // 4: block end
+        section += `</span>\n`;
+
+        // file footer
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section += docs.render.sections.file_footer();
+        }            
+
+        return section;            
+    };   
+    docs.render.sections.api = (ano, type) => {
+        let section = '',
+            item = ano[type]; // 'type' or 'component' == ano.type or ano.component
+
+        // 0: block: start
+        section += `\n<span name="asm_item_${type}_${item.name}" id="asm-item-${type}-${item.name}">\n</br>\n`;
+
+        // 1: back, next link (only when multiple docs)
+        // ` <- back ` &nbsp;&nbsp; ` next -> `
+        if (!options.docsConfig.oneDoc) {
+            if (item.back) { section += `${docs.render.link.item(item.back, '&larr;', '', true)}`; }
+            if (item.back && item.next) { section += `&nbsp; || &nbsp;`; }
+            if (item.next) { section += `${docs.render.link.item(item.next, '', '&rarr;', true)}`; }
+            if(item.back || item.next) { section += '\n'; }
+        }
+
+        // 2: title
+        // <h3 id="{id}">{name}</h3>
+        section += `${docs.render.link.itemHeader(item.name, type)}\n`;
+
+        // 3: meta information
+        // **type** &nbsp;&nbsp; ` modifier ` ` modifier ` ` ... `
+        // _extends_ {type} &nbsp;&nbsp; _mixes_ {type, type, ...} &nbsp;&nbsp; _implements_ {type, type, ...}
+        section += '\n';
+        section += `**\` ${item.type} \`** &nbsp;&nbsp;`;
+        if (item.modifiers.length > 0) { 
+            for (let m of item.modifiers) { section += ` \` ${m} \` `; } 
+        }
+        section += '\n';
+
+        if (item.extends || (item.mixes && item.mixes.length > 0) || (item.implements && item.implements.length > 0)) {
+            section += '\n';
+            if (item.extends) { section += `_extends_ ${docs.render.link.itemEntry(item.extends)} &nbsp;&nbsp;`; }
+            if (item.mixes && item.mixes.length > 0) { section += `_mixes_ ${docs.render.link.itemList(item.mixes, 'type')} &nbsp;&nbsp;`; }
+            if (item.implements && item.implements.length > 0) { section += `_implements_ ${docs.render.link.itemList(item.implements, 'type')}`; }
+            section += '\n';
+        }
+
+        // 4: divider
+        // ***
+        section += '***\n';
+
+        // 5: desc
+        // desc
+        // 
+        if (item.desc) { 
+            section += `_${item.desc}_\n`;
+            section += `\n`; 
+        }
+
+        // 6: remarks
+        // **Remarks**
+        // multi-line remarks
+        // 
+        if (item.remarks) {
+            section += '**Remarks**\n';
+            section += `\n`; 
+            section += `${item.remarks}\n`;
+            section += `\n`; 
+        }          
+
+        // 7: examples
+        // **Examples**
+        // multi-line example remarks with possible ```javascript ... ``` blocks
+        // 
+        if (item.example) {
+            section += '**Examples**\n';
+            section += `\n`; 
+            section += `${item.example}\n`;
+            section += `\n`; 
+        }
+
+        // 8: parameters
+        // **Parameters**
+        // * name ` type ` desc
+        // * ...
+        // 
+        if (item.params && item.params.length > 0) {
+            section += `**Parameters**\n`;
+            section += `\n`;
+            for(let p of item.params) { section += `* _${p.name}_ &nbsp; \` ${p.type} \` &nbsp; ${p.desc}\n`; }
+            section += `\n`;
+        }                
+
+        // 9: returns
+        // **Returns**
+        // ` type ` &nbsp; desc
+        // 
+        if (item.returns) {
+            section += '**Returns**\n';
+            section += `\n`;
+            section += `\` ${item.returns.type} \` &nbsp; ${item.returns.desc}\n`;
+            section += `\n`;
+        }
+    
+        // 10: yields
+        // **Yields**
+        // ` type ` &nbsp; desc
+        // 
+        if (item.generator && item.yields) {
+            section += '**Yields**\n';
+            section += `\n`;
+            section += `\` ${item.yields.type} \` &nbsp; ${item.yields.desc}\n`;
+            section += `\n`;                
+        }
+
+        // 10: exceptions
+        // **Exceptions**
+        // * ` type ` &nbsp; desc
+        // * ...
+        // 
+        if(item.throws && item.throws.length > 0) {
+            section += `**Exceptions**\n`;
+            section += `\n`;
+            for(let t of item.throws) { section += `* \` ${t.type} \` &nbsp; ${t.desc}\n`; }
+            section += `\n`;
+        }
+
+        // 12: members list
+        // **Members**
+        //
+        // Name | Description
+        // ---- | -----------
+        // ...  | ...
+        // 
+        let membersSectionId = docs.render.link.getIdOfName(item.name, type, 'members');
+        if (ano.members > 0) {
+            section += `\n<span id="${membersSectionId}">**Members**</span>\n`;
+            section += `\n`;
+            section += `Name | Description\n`;
+            section += `:---|:---\n`;
+
+            const processMembers = (title, members) => {
+                section += `**${title}** | &nbsp; \n`;
+                for (let member of members) {
+                    section += docs.render.link.memberEntry(member, item, type) + ` | ${member.desc}\n`;
+                }
+            };
+            if (ano.constructors.length > 0) { processMembers('Constructors', ano.constructors); }
+            if (ano.properties.length > 0) { processMembers('Properties', ano.properties); }
+            if (ano.methods.length > 0) { processMembers('Methods', ano.methods); }
+            if (ano.events.length > 0) { processMembers('Events', ano.events); }
+            if (ano.destructors.length > 0) { processMembers('Destructors', ano.destructors); }
+            section += `\n`; 
+        }        
+
+        // 13: member details
+        // **Constructors/Properties/Functions/Events/Destructors**
+        // 
+        // [
+        // **member**
+        // > ` modifier ` ` modifier ` ` ... `
+        // > 
+        // > ` type ` &nbsp; desc
+        // >   
+        // > **Parameters**
+        // > * name ` type ` desc
+        // > * ...
+        // >
+        // > **Returns**
+        // > ` type ` &nbsp; desc
+        // >
+        // > **Yields**
+        // > ` type ` &nbsp; desc
+        // >
+        // > **Exceptions**
+        // > * ` type ` &nbsp; desc
+        // > * ...
+        // > 
+        // > **Remarks**
+        // > remarks
+        // >
+        // > **Examples**
+        // > example
+        // > 
+        // > **Additional Information**
+        // > * _Since:_ version
+        // > * _Deprecated:_ desc
+        // > * _Restricted:_ desc 
+        // > * _Optional:_ desc
+        // > * _Conditional:_ desc
+        // > 
+        // > **See Also**
+        // > * name - desc
+        // > ..
+        // ]
+        // 
+        if (ano.members > 0) {
+
+            const processMember = (member) => {
+                let indentPrefix = (options.docsConfig.oneDoc ? '>' : '');
+
+                // 0: block: start
+                let memberId = docs.render.link.getLinkInfoOfMember(member, item, type);
+                section += `\n<span name="${memberId.id}" id="${memberId.id}">\n`;
+
+                // 1: title, modifiers
+                // title  ' modifier ' ' modifier ' ...
+                section += '\n\n';
+                section += `**${docs.render.link.memberHeader(member, membersSectionId)}**`;
+                if (member.modifiers.length > 0) { 
+                    section += `&nbsp;&nbsp;`;
+                    for (let m of member.modifiers) { section += ` \` ${m} \` `; } 
+                    section += '\n';
+                }
+                section += '\n\n';
+
+                // 3: desc
+                if (member.type || member.desc) {
+                    section += `${indentPrefix} `;
+                    if (member.type) { section += `\` ${member.type} \` &nbsp;&nbsp;`; }
+                    if (member.desc) { section += `${member.desc}`; }
+                    section += '\n';
+                    section += `${indentPrefix} \n`;
                 }
 
-                return section;
-            },
-            assets: (options) => {
-                let section = asm_doc_assets;
+                // 4: parameters
+                if (member.params && member.params.length > 0) {
+                    section += `${indentPrefix} **Parameters**\n`;
+                    section += `${indentPrefix} \n`;
+                    for(let p of member.params) { section += `${indentPrefix} * _${p.name}_ &nbsp; \` ${p.type} \` &nbsp; ${p.desc}\n`; }
+                    section += `${indentPrefix} \n`;
+                }                
 
-                if (options.current.ado.assets.length > 0) {
-                    let basePath = options.current.asm.replace(options.current.dest + '/', '').replace('.js', '');
-                    let astList = '',
-                        mainFile = '',
-                        baseFile = '',
-                        thisAst = {},
-                        fileSize = 0,
-                        fileType = '',
-                        fileExt = '',
-                        astPath = options.current.asm.replace('.js', '/');
-                    for(let thisAst of options.current.ado.assets) {
-                        baseFile = thisAst.file.replace('{.min}', '');
-                        mainFile = astPath + baseFile;
-                        fileExt = path.extname(thisAst.file).substr(1);
-                        fileSize = Math.round(fsx.statSync(mainFile).size / 1024);
-                        fileSize = (fileSize > 5 ? ` &nbsp; \` ${fileSize}k \`` : ''); // only assets >5k are shown size 
-                        fileType = (thisAst.type === fileExt ? '' : ` &nbsp; \` ${thisAst.type} \``); // file type is shown only where it is a known file type or user defined, which is different from file extension
-                        astList += '<<name>> | <<desc>>'
-                                    .replace('<<name>>', `[${baseFile}](./${basePath}/${baseFile}) ${fileType} ${fileSize}`)
-                                    .replace('<<desc>>', thisAst.desc + '\n');
-                    }
-                    section = section.replace('<<list>>', astList);
-                    section = replaceAll(section, '<<base>>', './' + basePath + '/');
-                } else {
-                    section = '';
+                // 5: returns
+                if (member.returns) {
+                    section += `${indentPrefix} **Returns**\n`;
+                    section += `${indentPrefix} \n`;
+                    section += `${indentPrefix} \` ${member.returns.type} \` &nbsp; ${member.returns.desc}\n`;
+                    section += `${indentPrefix} \n`;
+                }
+            
+                // 6: yields
+                if (member.generator && member.yields) {
+                    section += `${indentPrefix} **Yields**\n`;
+                    section += `${indentPrefix} \n`;
+                    section += `${indentPrefix} \` ${member.yields.type} \` &nbsp; ${member.yields.desc}\n`;
+                    section += `${indentPrefix} \n`;                
                 }
 
-                return section;
-            },
-            routes: (options) => {
-                let section = asm_doc_routes;
-
-                if (options.current.ado.routes.length > 0) {
-                    let rtList = '',
-                        verbs = '';
-                    for(let thisRoute of options.current.ado.routes) {
-                        verbs = '';
-                        for (let v of thisRoute.verbs) { verbs += ` \` ${v} \` `; }
-                        
-                        rtList += '<<name>> | <<route>> | <<desc>>'
-                            .replace('<<name>>', thisRoute.name)
-                            .replace('<<route>>', `{${thisRoute.mount}} ${thisRoute.path} &nbsp; ${verbs}`)
-                            .replace('<<desc>>', thisRoute.desc + '\n');
-                    }
-                    section = section.replace('<<list>>', rtList);
-                } else {
-                    section = '';
+                // 7: exceptions
+                if(member.throws && member.throws.length > 0) {
+                    section += `${indentPrefix} **Exceptions**\n`;
+                    section += `${indentPrefix} \n`;
+                    for(let t of member.throws) { section += `${indentPrefix} * \` ${t.type} \` &nbsp; ${t.desc}\n`; }
+                    section += `${indentPrefix} \n`;
                 }
 
-                return section;
-            },
-            extra: (options) => {
-                let section = asm_doc_extra;
+                // 8: remarks
+                if (member.remarks) {
+                    section += `${indentPrefix} **Remarks**\n`;
+                    section += `${indentPrefix} \n`;
+                    section += `${indentPrefix} ` + replaceAll(member.remarks, '\n', `\n${indentPrefix} `);
+                    section += `${indentPrefix} \n`;
+                }  
 
-                if (fsx.existsSync(options.current.docx)) {
-                    section = section.replace('<<extra>>', fsx.readFileSync(options.current.docx, 'utf8'));
-                } else {
-                    section = '';
+                // 9: examples
+                if (member.example) {
+                    section += `${indentPrefix} **Examples**\n`;
+                    section += `${indentPrefix} \n`;
+                    section += `${indentPrefix} ` + replaceAll(member.example, '\n', `\n${indentPrefix} `);
+                    section += `${indentPrefix} \n`;
+                }  
+
+                // 10: additional informaiton
+                if (member.since || member.deprecated || member.restricted || member.optional || member.conditional) {
+                    section += `${indentPrefix} **Additional Information**\n`;
+                    if (member.since) { section += `${indentPrefix} * _Since:_ ${member.since}\n`; }
+                    if (member.deprecated) { section += `${indentPrefix} * _Deprecated:_ ${member.deprecated}\n`; }
+                    if (member.restricted) { section += `${indentPrefix} * _Restricted:_ ${member.restricted}\n`; }
+                    if (member.optional) { section += `${indentPrefix} * _Optional:_ This member is marked as optional and its absence will not fail any interface compliance check.\n`; }
+                    if (member.conditional && member.conditional.length > 0) { section += `${indentPrefix} * _Conditional:_ This member is marked as conditional and will be present only when all of the following environmental conditions are met: **${member.conditional.join(', ')}**\n`; }
+                    section += `${indentPrefix} \n`;
                 }
-
-                return section;
-            },
-            footer: (options) => {
-                let section = asm_doc_footer;
-
-                section = replaceAll(section, '<<engine>>', `[${options.current.ado.builder.name}](${options.packageJSON.link}/#/flairBuild)`);
-                section = replaceAll(section, '<<engine_ver>>', options.current.ado.builder.version);
-                section = replaceAll(section, '<<format>>', `[${options.current.ado.builder.format}](${options.packageJSON.link}/#/fasm)`);
-                section = replaceAll(section, '<<format_ver>>', options.current.ado.builder.formatVersion);
                 
-                return section;
+                // 11: see also
+                if (member.seealso.length > 0) {
+                    section += `${indentPrefix} **See Also**\n`;
+                    for(let s of member.seealso) { section += `${indentPrefix} * ${docs.render.link.item(s)}\n`; }
+                    section += `${indentPrefix} \n`;
+                }
+    
+                // 12: space
+                section += `${indentPrefix} &nbsp;\n`;
+
+                // 13: block: end
+                section += `\n</span>\n`;
+            };
+            const processMembers = (title, members) => {
+                section += `<u>**${title}**</u>\n`;
+                section += `\n`;
+                for (let member of members) { processMember(member); }
+                section += `\n`;
+            };
+            if (ano.constructors.length > 0) { processMembers('Constructors', ano.constructors); }
+            if (ano.properties.length > 0) { processMembers('Properties', ano.properties); }
+            if (ano.methods.length > 0) { processMembers('Methods', ano.methods); }
+            if (ano.events.length > 0) { processMembers('Events', ano.events); }
+            if (ano.destructors.length > 0) { processMembers('Destructors', ano.destructors); }
+            section += `\n`;
+        }
+
+        // 14: additional information
+        // **Additional Information**
+        // * _Since:_ version
+        // * _Deprecated:_ desc
+        // * _Restricted:_ desc 
+        // 
+        if (ano.since || ano.deprecated || ano.restricted) {
+            section += `**Additional Information**\n`;
+            if (ano.since) { section += `* _Since:_ ${ano.since}\n`; }
+            if (ano.deprecated) { section += `* _Deprecated:_ ${ano.deprecated}\n`; }
+            if (ano.restricted) { section += `* _Restricted:_ ${ano.restricted}\n`; }
+            section += `\n`;
+        }
+
+        // 15: see also
+        // **See Also**
+        // * Name - Desc
+        // * ...
+        // 
+        if (ano.seealso && ano.seealso.length > 0) {
+            section += `**See Also**\n`;
+            for(let s of ano.seealso) { section += `* ${docs.render.link.item(s)}\n`; }
+            section += `\n`;
+        }
+
+        // 16: block: end
+        section += '\n</span>\n';
+
+        return section;
+    };    
+    docs.render.sections.namespaces = () => {
+        if (!options.docsConfig.include.namespaces || options.current.ado.ns.length === 0) { return ''; }
+
+        let section = '';
+
+        // file header
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section = docs.render.sections.file_header();
+            section += docs.render.sections.asm_header();
+        }
+
+        // 0: block start
+        section += `<span name="asm_namespaces" id="asm-namespaces">\n`;
+        section += '\n&nbsp;\n';
+
+        // 1: title
+        // title
+        // 
+        section += `## ${docs.render.link.sectionHeader('namespaces')}\n`;
+
+        // 2: members list
+        //
+        // Name | Description
+        // ---- | -----------
+        // ...  | ...
+        section += '\n';
+        section += `Name | Description\n`;
+        section += `:---|:---\n`;
+        for(let item of options.current.ado.ns) {
+            section += `${item.name} | ${item.desc}\n`;
+        }
+
+        // 3: block end
+        section += `</span>\n`;
+
+        // file footer
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section += docs.render.sections.file_footer();
+        }            
+
+        return section;
+    };
+    docs.render.sections.resources = () => {
+        if (!options.docsConfig.include.resources || options.current.ado.resources.length === 0) { return ''; }
+
+        let section = '';
+
+        // file header
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section = docs.render.sections.file_header();
+            section += docs.render.sections.asm_header();
+        }
+
+        // 0: block start
+        section += `<span name="asm_resources" id="asm-resources">\n`;
+        section += '\n&nbsp;\n';
+
+        // 1: title
+        // title
+        // 
+        section += `## ${docs.render.link.sectionHeader('resources')}\n`;
+
+        // 2: resources list
+        //
+        // Name | Description
+        // ---- | -----------
+        // ...  | ...
+        let resType = '', 
+            resSize = '',
+            skipSizes = ['0k', '1k'];
+        section += '\n';
+        section += `Name | Description\n`;
+        section += `:---|:---\n`;
+        for(let item of options.current.ado.resources) {
+            resType = (item.type ? ` &nbsp; \` ${item.type} \`` : '');
+            resSize = (item.size && skipSizes.indexOf(item.size) === -1 ? ` &nbsp; \` ${item.size} \`` : ''); // size is shown only those which are not skipped
+            section += `${item.name} ${resType} ${resSize} | ${item.desc}\n`;
+        }
+
+        // 3: block end
+        section += `</span>\n`;
+
+        // file footer
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section += docs.render.sections.file_footer();
+        }    
+
+        return section;
+    };   
+    docs.render.sections.assets = () => {
+        if (!options.docsConfig.include.assets || options.current.ado.assets.length === 0) { return ''; }
+
+        let section = '';
+
+        // file header
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section = docs.render.sections.file_header();
+            section += docs.render.sections.asm_header();
+        }
+
+        // 0: block start
+        section += `<span name="asm_assets" id="asm-assets">\n`;
+        section += '\n&nbsp;\n';
+
+        // 1: title
+        // title
+        // 
+        section += `## ${docs.render.link.sectionHeader('assets')}\n`;
+
+        // 2: assets location
+        // Assets are located under: path
+        let basePath = options.current.asm.replace(options.current.dest + '/', '').replace('.js', ''),
+            base = './' + basePath + '/';
+        section += `Assets are located under: [${base}](${base})\n`;
+
+        // 3: assets list
+        //
+        // Name | Description
+        // ---- | -----------
+        // ...  | ...
+        let mainFile = '',
+            baseFile = '',
+            fileSize = 0,
+            fileType = '',
+            fileExt = '',
+            sizeShowGreaterThan = 5,
+            astPath = options.current.asm.replace('.js', '/');
+        section += '\n';
+        section += `Name | Description\n`;
+        section += `:---|:---\n`;
+        for(let item of options.current.ado.assets) {
+            baseFile = item.file.replace('{.min}', '');
+            mainFile = astPath + baseFile;
+            fileExt = path.extname(item.file).substr(1);
+            fileSize = Math.round(fsx.statSync(mainFile).size / 1024);
+            fileSize = (fileSize > sizeShowGreaterThan ? ` &nbsp; \` ${fileSize}k \`` : ''); // only assets >5k are shown size 
+            fileType = (item.type === fileExt ? '' : ` &nbsp; \` ${item.type} \``); // file type is shown only where it is a known file type or user defined, which is different from file extension
+            section += `[${baseFile}](./${basePath}/${baseFile}) ${fileType} ${fileSize} | ${item.desc}\n`;     
+        }
+
+        // 3: block end
+        section += `</span>\n`;
+
+        // file footer
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section += docs.render.sections.file_footer();
+        }    
+
+        return section;
+    };  
+    docs.render.sections.routes = () => {
+        if (!options.docsConfig.include.routes || options.current.ado.routes.length === 0) { return ''; }
+
+        let section = '';
+
+        // file header
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section = docs.render.sections.file_header();
+            section += docs.render.sections.asm_header();
+        }
+
+        // 0: block start
+        section += `<span name="asm_routes" id="asm-routes">\n`;
+        section += '\n&nbsp;\n';
+
+        // 1: title
+        // title
+        // 
+        section += `## ${docs.render.link.sectionHeader('routes')}\n`;
+
+        // 2: routes list
+        //
+        // Name | Route | Description
+        // ---- | ----- | -----------
+        // ...  | ...   | ...
+        let verbs = '';
+        section += '\n';
+        section += `Name | Route | Description\n`;
+        section += `:---|:---|:---\n`;
+        for(let item of options.current.ado.routes) {
+            verbs = '';
+            for (let v of item.verbs) { verbs += ` \` ${v} \` `; }
+            section += `{${item.name} | **{${item.mount}}** ${item.path} &nbsp; ${verbs} | ${item.desc}\n`;
+        }
+ 
+        // 3: block end
+        section += `</span>\n`;
+
+        // file footer
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section += docs.render.sections.file_footer();
+        }    
+
+        return section;
+    };                                                              
+    docs.render.sections.extra = () => {
+        if (!fsx.existsSync(options.current.docx)) { return ''; }
+
+        let section = '';
+
+        // file header
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section = docs.render.sections.file_header();
+            section += docs.render.sections.asm_header();
+        }
+
+        // 0: block start
+        section += `<span name="asm_extra" id="asm-extra">\n`;
+
+        // 1: extra content as is
+        section += fsx.readFileSync(options.current.docx, 'utf8');
+
+        // 2: block end
+        section += `</span>\n`;
+
+        // file footer
+        if (!options.docsConfig.oneDoc && !options.docsConfig.supressHeaderFooterInGeneratedDocs) {
+            section += docs.render.sections.file_footer();
+        }            
+
+        return section;
+    };   
+    docs.render.sections.file_footer = () => {
+        let section = '';
+
+        // 0: block start
+        section += `\n<span name="file_footer" id="file-footer">\n`;
+
+        // 1: thin line break
+        section += `\n</br>\n\n##\n\n`;
+
+        // 2: built with
+        // Build with engine (version) using name (format version) format.
+        section += `<small><small>\n`;
+        section += `Built with [${options.current.ado.builder.name}](${options.packageJSON.link}/#/flairBuild) (v${options.current.ado.builder.version}) using [${options.current.ado.builder.format}](${options.packageJSON.link}/#/fasm) (v${options.current.ado.builder.formatVersion}) format.\n`;
+        
+        // 3: go top link
+        // [arrow]
+        section += `&nbsp;&nbsp; <a href="#file-header">[&nwarr;]</a>\n`;
+        section += `</small></small>\n`;
+
+        // 4: block end
+        section += `\n</span>\n`;
+        
+        return section;
+    };
+
+    // file generators
+    docs.createFile = (doc, fileName) => {
+        if (options.docsConfig.oneDoc) {
+            fsx.writeFileSync(options.current.asmDoc, doc.trim(), 'utf8');
+            logger(0, 'docs',  options.current.asmDoc); // doc generated
+        } else {
+            doc = doc.trim();
+            if (doc) {
+                let docFile = './' + path.join(options.docsConfig.dest, options.current.asmName, fileName);
+                fsx.ensureDirSync(path.dirname(docFile));
+                fsx.writeFileSync(docFile, doc.trim(), 'utf8');
+                logger(1, '', fileName); // doc generated
             }
         }
     };
+    docs.copyFiles = () => {
+        let docsSrc = './' + path.join(options.current.asmPath, '(docs)'),
+            docsDest = './' + path.join(options.docsConfig.dest, options.current.asmName);
+
+        if (fsx.existsSync(docsSrc)) {
+            let moreDocs = rrd(docsSrc).filter(file => junk.not(path.basename(file))),
+                src = '',
+                dest = '', 
+                content = '';
+            for (let doc of moreDocs) {
+                if (doc.indexOf('/_') !== -1) { continue; } // either a folder or file name starts with '_'. skip it
+                src = './' + doc;
+                dest = './' + path.join(docsDest, doc.replace(docsSrc.replace('./', ''), ''));
+
+                if (options.docsConfig.includeHeaderFooterInBundledDocs) { // header-footer to be added in copied doc
+                    content = docs.render.sections.file_header(); 
+                    content += fsx.readFileSync(src, 'utf8').trim();
+                    content += docs.render.sections.file_footer();
+                    fsx.writeFileSync(dest, content, 'utf8');
+                } else { // header-footer not be added, copy doc as is
+                    fsx.copySync(src, dest, { errorOnExist: false });
+                }
+                logger(1, '', src);
+            }
+        }
+    };
+
+    // docs generators
+    docs.generateOneDoc = () => {
+        let doc = '';
+
+        doc += docs.render.sections.file_header();
+        doc += docs.render.sections.asm_header();
+        doc += docs.render.sections.sections_header();
+        doc += docs.render.sections.items('component');
+        doc += docs.render.sections.namespaces();
+        doc += docs.render.sections.items('type');
+        doc += docs.render.sections.resources();
+        doc += docs.render.sections.assets();
+        doc += docs.render.sections.routes();
+        doc += docs.render.sections.extra();
+        doc += docs.render.sections.file_footer();
+
+        // write document
+        docs.createFile(doc);
+    }
+    docs.generateMultiDocs = () => {
+        let doc = '';
+        logger(0, 'docs', options.docsConfig.dest); // starting processing docs
+        
+        docs.createFile(docs.render.sections.items('component'), 'components.md');
+        docs.createFile(docs.render.sections.namespaces(), 'namespaces.md');
+        docs.createFile(docs.render.sections.items('type'), 'types.md');
+        docs.createFile(docs.render.sections.resources(), 'resources.md');
+        docs.createFile(docs.render.sections.assets(), 'assets.md');
+        docs.createFile(docs.render.sections.routes(), 'routes.md');
+    };
+    docs.generateMultiDocsEntry = () => {
+        // in multi-docs mode, one folder is created for each assembly - under docs/dest folder
+        // folder name is same as assembly name
+        // get that list from there and then build assemblies.md and then copy it to main folder
+        // on docs dest
+        // NOTE: header/footer is not added here, because there is no current assembly, so not 
+        // packageJSON to pick data from
+        
+        let section = '';
+
+        // 0: block start
+        section += `<span name="asm_main" id="asm-main">\n`;
+
+        // 1: list of assemblies
+        // Name | Members
+        // asm1 | Components || Namespaes || Types || ...
+        // asm2 | ...
+        //
+        section += '\n';
+        section += `Name | Members\n`;
+        section += `:---|:---\n`;        
+        let folders = getFolders(options.docsConfig.dest, true),
+            sections = '',
+            prefix = '',
+            sectionFile = '',
+            fileLink = '';
+        for(let asm of folders) {
+            prefix = '';
+
+            // components
+            sectionFile = './' + path.join(options.docsConfig.dest, asm, 'components.md');
+            if (fsx.existsSync(sectionFile)) { 
+                prefix = ', '
+                fileLink = './' + path.join(asm, 'components.md');
+                sections += `<a href="${fileLink}">Components</a>`; 
+            }
+
+            // namespaces
+            sectionFile = './' + path.join(options.docsConfig.dest, asm, 'namespaces.md');
+            if (fsx.existsSync(sectionFile)) { 
+                fileLink = './' + path.join(asm, 'namespaces.md');
+                sections += prefix + `<a href="${fileLink}">Namespaces</a>`; 
+                prefix = ', '
+            }
+
+            // types
+            sectionFile = './' + path.join(options.docsConfig.dest, asm, 'types.md');
+            if (fsx.existsSync(sectionFile)) { 
+                fileLink = './' + path.join(asm, 'types.md');
+                sections += prefix + `<a href="${fileLink}">Types</a>`; 
+                prefix = ', '
+            }            
+
+            // resources
+            sectionFile = './' + path.join(options.docsConfig.dest, asm, 'resources.md');
+            if (fsx.existsSync(sectionFile)) {
+                fileLink = './' + path.join(asm, 'resources.md'); 
+                sections += prefix + `<a href="${fileLink}">Resources</a>`; 
+                prefix = ', '
+            }            
+
+            // assets
+            sectionFile = './' + path.join(options.docsConfig.dest, asm, 'assets.md');
+            if (fsx.existsSync(sectionFile)) { 
+                fileLink = './' + path.join(asm, 'assets.md'); 
+                sections += prefix + `<a href="${fileLink}">Assets</a>`; 
+                prefix = ', '
+            }            
+
+            // routes
+            sectionFile = './' + path.join(options.docsConfig.dest, asm, 'routes.md');
+            if (fsx.existsSync(sectionFile)) { 
+                fileLink = './' + path.join(asm, 'routes.md'); 
+                sections += prefix + `<a href="${fileLink}">Routes</a>`; 
+                prefix = ', '
+            }
+
+            // add
+            section += `${asm} | ${sections}\n`;
+        }
+
+        // 2: block end
+        section += `</span>\n`;
+
+        // write file
+        let docsEntryFile = './' + path.join(options.docsConfig.dest, 'index.md');
+        fsx.ensureDirSync(path.dirname(docsEntryFile));
+        fsx.writeFileSync(docsEntryFile, section, 'utf8');
+        logger(0, 'docs-entry',  docsEntryFile); // doc entry file generated
+    };
+
+    // main
+    docs.build = () => {
+        if (options.docsConfig.oneDoc) { 
+            docs.generateOneDoc(); // one-document-per-assembly
+        } else { 
+            docs.generateMultiDocs(); // multi-docs-per-assembly
+            docs.copyFiles(); // copy '(docs)' folder of this assembly also, as is
+        }
+    };
+    docs.buildMain = () => {
+        if (!options.docsConfig.oneDoc) { 
+            docs.generateMultiDocsEntry();
+        }
+    }
+
+    // #endregion
 
     // core engine
-    const build = async (options, buildDone) => {
-        // logging
-        const logger = options.logger
-
+    const build = async (buildDone) => {
         // lint, minify and gzip
         const lintJS = (file) => {
             return new Promise((resolve, reject) => {
@@ -1733,28 +2476,6 @@
             });
         };
 
-        // markdown
-        const buildMD = (options) => {
-            let docs = '';
-    
-            // assemble document
-            docs += asm2md.render.header(options);
-            docs += asm2md.render.assembly(options);
-            docs += asm2md.render.ns(options);
-            docs += asm2md.render.types(options);
-            docs += asm2md.render.resources(options);
-            docs += asm2md.render.assets(options);
-            docs += asm2md.render.routes(options);
-            docs += asm2md.render.extra(options);
-            docs += asm2md.render.footer(options);
-    
-            // clear
-            asm2md.annotations = [];
-    
-            // return
-            return docs;
-        };        
-    
         // 5: process namespaces
         const processNamespaces = (done) => {
             if (options.current.namespaces.length === 0) { 
@@ -2006,7 +2727,7 @@
             // define namespace to process
             let nsFolder = options.current.namespaces.splice(0, 1)[0]; // pick from top
             if (nsFolder.startsWith('_')) { processNamespaces(done); return; } // ignore if starts with '_'
-            if (['(assets)', '(libs)', '(locales)','(bundle)', '(..)'].indexOf(nsFolder) !== -1) { processNamespaces(done); return; } // skip special folders at namespace level
+            if (['(assets)', '(libs)', '(locales)','(bundle)', '(docs)', '(..)'].indexOf(nsFolder) !== -1) { processNamespaces(done); return; } // skip special folders at namespace level
     
             options.current.nsName = nsFolder;
             options.current.nsPath = './' + path.join(options.current.asmPath, options.current.nsName);
@@ -2030,7 +2751,8 @@
                         type: defaultType || '',
                         size: (options.docs ? Math.round(fsx.statSync(file).size / 1024) + 'k' : '0k'),
                         desc: ''
-                    };
+                    },
+                    item = null;
                 if (options.docs) { // don't do if docs are not to be generated
                     let loadInfo = (text) => {
                         if (text) {
@@ -2066,41 +2788,10 @@
                         if (firstLine.startsWith('//!')) {
                             firstLine = firstLine.substr(3).trim();
                             loadInfo(firstLine);
-                        } else { // try to get type and desc automatically - it looks for first occurance of Interface, Class, etc. and any @type before that place for desc
-                            // flairTypes = ['class', 'enum', 'interface', 'mixin', 'struct'],
-                            let foundAt = typeContent.indexOf('Class(');
-                            if (foundAt !== -1) { 
-                                info.type = 'class' 
-                            } else {
-                                foundAt = typeContent.indexOf('Interface(');
-                                if (foundAt !== -1) { 
-                                    info.type = 'interface' 
-                                } else {
-                                    foundAt = typeContent.indexOf('Mixin(');
-                                    if (foundAt !== -1) { 
-                                        info.type = 'mixin' 
-                                    } else {
-                                        foundAt = typeContent.indexOf('Enum(');
-                                        if (foundAt !== -1) { 
-                                            info.type = 'enum' 
-                                        } else {
-                                            foundAt = typeContent.indexOf('Struct(');
-                                            if (foundAt !== -1) { 
-                                                info.type = 'struct' 
-                                            } 
-                                        } 
-                                    }                                    
-                                }
-                            }
-                            if (foundAt !== -1) { // found at some level
-                                typeContent = typeContent.substr(0, foundAt); // pick all content before we found start of definition
-                                foundAt = typeContent.indexOf('@type'); // @type length = 5
-                                if (foundAt !== -1) {
-                                    typeContent = typeContent.substr(foundAt + 5); // pick after @type
-                                    typeContent = typeContent.substr(0, typeContent.indexOf('\n')).trim();
-                                    info.desc = typeContent;
-                                } 
-                            }
+                        } else { // try to get type and desc automatically
+                            item = code.extract.typeInfo(typeContent);
+                            info.type = item.type;
+                            info.desc = item.desc;
                         }
                     }
                 }
@@ -2473,18 +3164,29 @@
                     options.current.asmContent = fsx.readFileSync(options.current.asmMain, 'utf8');
                     options.current.asyncTypeLoading = false;
                 } else {
-                    options.current.asmContent = asm_module; // template
+                    options.current.asmContent = code.templates.module; // template
                     options.current.asyncTypeLoading = true;
                 }
 
-                // process file injections
-                options.current.asmContent = injector(options.current.asmPath, options.current.asmContent); 
+                // process already-defined file injections and assume them all as built-in components
+                // and also record injected items as docComponents for later usage
+                options.current.asmContent = code.inject(options.current.asmPath, options.current.asmContent, true, options.current.docComponents); 
+                
+                // replace payload placeholder via injection
+                options.current.asmContent = replaceAll(options.current.asmContent, '<<asm_payload>>', '<!-- inject: ./templates/asm/payload.js -->');
+                options.current.asmContent = code.inject(__dirname, options.current.asmContent); 
 
-                // replace payload placeholders and injections
-                options.current.asmContent = replaceAll(options.current.asmContent, '<<asm_payload>>', '<!-- inject: ./templates/asm_payload.js -->');
-                options.current.asmContent = injector(__dirname, options.current.asmContent); 
-
-                // replace placeholders
+                // replace components placeholder via read file
+                // this means, 'components.js' file should control only injection statements and nothing else
+                // and also record injected items as docComponents for later usage
+                if (fsx.existsSync(options.current.components)) {
+                    options.current.asmContent = replaceAll(options.current.asmContent, '<<asm_components>>', fsx.readFileSync(options.current.components, 'utf8'));
+                    options.current.asmContent = code.inject(options.current.asmPath, options.current.asmContent, true, options.current.docComponents); 
+                    logger(0, 'components',  options.current.components);
+                } else {
+                    options.current.asmContent = replaceAll(options.current.asmContent, '<<asm_components>>', '// (not defined)');
+                }
+                // replace placeholders (multiple copies of same placeholder may be present)
                 options.current.asmContent = replaceAll(options.current.asmContent, '<<name>>',  options.packageJSON.name);
                 options.current.asmContent = replaceAll(options.current.asmContent, '<<title>>',  options.current.ado.title);
                 options.current.asmContent = replaceAll(options.current.asmContent, '<<desc>>',  options.current.ado.desc);
@@ -2512,10 +3214,10 @@
                     options.current.asmContent = replaceAll(options.current.asmContent, '<<config>>', '{}');
                 }
 
-                // inject global functions
+                // inject functions
                 if (fsx.existsSync(options.current.functions)) {
                     options.current.asmContent = replaceAll(options.current.asmContent, '<<asm_functions>>', `<!-- inject: ${options.current.functions} --> `);
-                    options.current.asmContent = injector('./', options.current.asmContent);
+                    options.current.asmContent = code.inject('./', options.current.asmContent);
                     logger(0, 'functions', options.current.functions); 
                 } else {
                     options.current.asmContent = replaceAll(options.current.asmContent, '<<asm_functions>>', '// (not defined)');
@@ -2565,6 +3267,9 @@
                     return items;
                 };
 
+                // sort docComponents by name
+                options.current.docComponents.sort((a, b) => (a.name > b.name) ? 1 : -1); 
+
                 // update ado for namespaces from types, resources and routes
                 let ns = []; // {  name, desc }
                 addNS(ns, options.current.ado.types.map(a => a.name));
@@ -2572,7 +3277,7 @@
                 addNS(ns, options.current.ado.routes.map(a => a.name));
                 options.current.ado.ns = ns;
 
-                // sort nsby name
+                // sort ns by name
                 options.current.ado.ns.sort(); 
 
                 // sort routes by index
@@ -2623,7 +3328,7 @@
                     thisFile = '',
                     allTypes = '',
                     fileInfo = {},
-                    typeWrapper = (options.current.asyncTypeLoading ? asm_type_async : asm_type_sync);
+                    typeWrapper = (options.current.asyncTypeLoading ? code.templates.type_async : code.templates.type_sync);
                 for(let nsFile of options.current.ado.types) {
                     thisFile = './' + nsFile.originalFile;
                     logger(1, '', nsFile.qualifiedName + ' (' + thisFile + ')');
@@ -2635,7 +3340,7 @@
                     // more about the issue at: https://stackoverflow.com/questions/5297856/replaceall-in-javascript-and-dollar-sign
                     let content = replaceAll(typeWrapper, '<<asm_type>>', `<!-- inject: ${thisFile} -->`);
                     content = replaceAll(content, '<<file>>', thisFile);
-                    content = injector('./', content);
+                    content = code.inject('./', content);
                     content = replaceAll(content, '$(', '$$$('); // replace all messed-up calls with correct $$$( eventually becomes $$(
                     content = replaceAll(content, '$.', '$$$.'); // replace all messed-up calls with correct $$$. eventually becomes $$.
         
@@ -2643,7 +3348,7 @@
                     content = giveNamespaceAndNameToType(content, nsFile.nsName, nsFile.typeName);
 
                     // process type injections, if any
-                    content = injector(nsFile.nsPath, content);
+                    content = code.inject(nsFile.nsPath, content);
         
                     // store for docs generation
                     options.current.docTypes[nsFile.qualifiedName] = content;
@@ -2731,7 +3436,7 @@
         
                     // wrap resource in resource wrapper
                     let thisRes = '';
-                    thisRes = replaceAll(asm_resource, '<<asm_res>>', JSON.stringify(rdo));
+                    thisRes = replaceAll(code.templates.resource, '<<asm_res>>', JSON.stringify(rdo));
                     thisRes = replaceAll(thisRes, '<<file>>', rdo.file);
         
                     // append content to all list
@@ -2803,7 +3508,7 @@
                 const afterMinify = () => {
                     // gzip
                     let gzFile = minFile + '.gz';
-                    if (options.gzip && !options.current.skipMinify && !options.current.skipMinifyThisAssembly) {
+                    if (options.gzip && !options.current.skipMinify && !options.current.skipMinifyThisAssembly && fsx.existsSync(minFile)) {
                         gzipFile(minFile).then(() => {
                             options.current.stat += ', ' + Math.round(fsx.statSync(gzFile).size / 1024) + 'kb gzipped';
                             afterGzip();
@@ -2842,11 +3547,13 @@
             const generateDocs = () => {
                 if (!options.docs) { return; }
 
-                let asmDocContent = buildMD(options);
-                fsx.writeFileSync(options.current.asmDoc, asmDocContent.trim(), 'utf8');
+                // build docs
+                docs.build();
+
+                // clean
                 options.current.docx = '';
                 options.current.docTypes = {};
-                logger(0, 'doc', options.current.asmDoc);
+                options.current.docComponents = [];
             };
 
             // define assembly to process
@@ -2865,6 +3572,7 @@
             options.current.asmMain = './' + path.join(options.current.src, options.current.asmName, 'index.js');
             options.current.asyncTypeLoading = true;
             options.current.functions = './' + path.join(options.current.src, options.current.asmName, 'functions.js');
+            options.current.components = './' + path.join(options.current.src, options.current.asmName, 'components.js');
             options.current.asmSettings = './' + path.join(options.current.src, options.current.asmName, 'settings.json');
             options.current.asmConfig = './' + path.join(options.current.src, options.current.asmName, 'config.json');
             options.current.skipMinifyThisAssembly = (options.skipMinifyFor.indexOf(asmFolder) !== -1); // skip minify for this assembly, if this is a special file
@@ -2873,6 +3581,7 @@
             options.current.adoCache = path.join(options.cache, options.current.asmPath + '.json');
             options.current.docx = options.current.asmMain.replace('index.js', 'index.md');
             options.current.docTypes = {};
+            options.current.docComponents = [];
 
             isBuildAssembly((cb) => {
                 // assembly (start)
@@ -2976,12 +3685,12 @@
                 let preamble_lines = '',
                     isFirst = true;
                 for(let _ado of options.current.adosJSON) {
-                    preamble_lines += (isFirst ? '' : '\t') + replaceAll(asm_preamble_line, '<<ado>>', JSON.stringify(_ado));
+                    preamble_lines += (isFirst ? '' : '\t') + replaceAll(code.templates.preamble_line, '<<ado>>', JSON.stringify(_ado));
                     isFirst = false;
                 }
 
                 // create preamble content
-                let preambleContent = replaceAll(asm_preamble, '<<path>>', options.current.dest.replace(options.dest, './'));
+                let preambleContent = replaceAll(code.templates.preamble, '<<path>>', options.current.dest.replace(options.dest, './'));
                 preambleContent = replaceAll(preambleContent, '<<lupdate>>', new Date().toUTCString());
                 preambleContent = replaceAll(preambleContent, '<<preamble_payload>>', preamble_lines);
                 
@@ -3072,7 +3781,7 @@
                     if (options.plugins[plugin_name]) { 
                         plugin_exec = options.plugins[plugin_name].exec; 
                         if (plugin_exec) {
-                            plugin_exec(options.plugins[plugin_name].settings, options, runPlugin);
+                            plugin_exec(options.plugins[plugin_name].settings, runPlugin);
                         } else {
                             runPlugin(); // pick next
                         }
@@ -3239,6 +3948,9 @@
 
         // 1: start
         startBuild(() => {
+            // build main entry point of docs, if required
+            docs.buildMain();
+
             // all done
             buildDone()
         });
@@ -3257,8 +3969,65 @@
      *              dest: destination folder root path - where to copy built assemblies
      *              cache: temp folder root path - where all temp content is stored for caching or otherwise
      *              docs: if documentation to be generated for each built assembly 
-     *                    doc annotations must follow jsdocs syntax: https://jsdoc.app/
-     *                    read more here: https://www.npmjs.com/package/jsdoc-to-markdown
+     *                    doc annotations follow a subset of jsdocs syntax: https://jsdoc.app/
+     *                    refer notes inside docs.annotations.types for supported symbol details for each type of document block
+     *              docsConfig: documentation configuation options
+     *              {
+     *                  "oneDoc": true/false
+     *                            default is true
+     *                            if true, one '<assembly-name>.md file will be created for every assembly at the same place
+     *                            where assembly is generated. This will skip those assemblies which are configured in "exclude"
+     *                            if false, one '<assembly-name>' folder will be created under configured "dest" folder and all required docs will
+     *                            be generated here underneath for the assembly
+     *                            in addition to these, one 'assemblies.md' will also be generated to list all assemblies at the
+     *                            root "dest" folder
+     *                                  excluded assemblies will still be shown here, but without any hyperlink for next level documentation
+     *                                  starting with assemblies.md, all files will have relative hyperlinks to navigate back and forth
+     *                    "supressHeaderFooterInGeneratedDocs": true/false
+     *                          this is considered only when oneDoc is false
+     *                          if file header/footer is to be excluded in all generated docs, this will be useful when docs site is being
+     *                          generated using custom theme and markdown content is being embedded in some themed area
+     *                          default is false
+     *                    "includeHeaderFooterInBundledDocs": true/true
+     *                          this is considered only when oneDoc is false
+     *                          if file header/footer is to be added in all docs that are being copied from (docs) folder of the assembly
+     *                          this is useful when handwritten documents have to carry same look and feel as of generated docs
+     *                          and when supressHeaderFooterInGeneratedDocs was set to false, to include header/footer -- in that case
+     *                          these copied docs can also have same header/footer
+     *                          default is true
+     *                    "include": {
+     *                          "components": true/false - if components documentation to be generated
+     *                                  components are all files that are placed inside "(bundle)" folder under each assembly and
+     *                                  for which injection placeholder is defined in index.js file of the assembly or inside components.js
+     *                                  default is true
+     *                          "namespaces": true/false - if namespaces documentation to be generated
+     *                                  default is true
+     *                          "types": true/false - if types documentation to be generated
+     *                                  default is true
+     *                          "resources": true/false - if resources documentation to be generated
+     *                                  default is false
+     *                          "assets": true/false - if assets documentation to be generated
+     *                                  default is false
+     *                          "routes": true/false - if routes documentation to be generated
+     *                                  default is false
+     *                     }
+     *                      
+     *                      docs will be generated for every (non-excluded) assembly in case oneDoc is false
+     *                            'components.md', 'namespaces.md', 'types.md', 'references.md', 'resources.md', 'assets.md', 'routes.md'
+     *                            for every namespace, one file will be generated as: '<namespace-name>.md'
+     *                            for every component, one file will be generated as: '<component-name>.md'
+     *                            for every type, one file will be generated as: '<type-name>.md'
+     *                            for every reference, one file will be generated as: '<reference-name>.md'
+     *                            
+     *                  "exclude": [] - name of the assemblies which are not to be processed for documentation
+     *                              excluded assemblies will still be listed in assemblies.md but without any hyperlink
+     *                  "dest": "" - root folder name where to generate these documents, if "OneDoc" is false
+     *                               default is: ./docs/content
+     *                              when clean operation is running, this folder is deleted, so if files are to be placed under
+     *                              main docs folder, it is important that this path refers to some internal docs content folder under main docs folder
+     *                              where docs website's files may be present
+     *                              In case different document versions are to be supported, "dest" path must be adjusted accordingly. e.g., "./docs/content/v1"
+     *              }     
      *              custom: if custom control is needed for picking source and other files
      *                  true - all root level folders under 'src' will be treated as one individual assembly
      *                      Note: if folder name starts with '_', it is skipped
@@ -3447,6 +4216,11 @@
      *                                  > it can have any structure underneath
      *                                  > all files and folder under it, are skipped, unless they are referred via 
      *                                    <!-- inject: <file> --> pattern in any type or in index.js file
+     *                          (docs)   - documents folder
+     *                                  > this special folder can be used to place all readymade docs (.md) files 
+     *                                  > it can have any structure underneath
+     *                                  > this folder content will be copied as it under documentation destination folder
+     *                                  > when 'docs' is true and 'oneDoc' is set to false
      * 
      *                          UNDER EACH NAMESPACED FOLDER:
      *                              Each namespace folder can take any structure and files can be placed in any which way
@@ -3536,11 +4310,11 @@
      *  cb: function - callback function
      * @returns void
      */ 
-    const flairBuild = function(options, cb) {
+    const flairBuild = function(_options, cb) {
         const config = require('../../shared/options.js').config;
 
         // build options
-        options = options || {};
+        options = _options || {};
         options.package = options.package || './package.json';
 
         options.dest = options.dest || './dist';
@@ -3548,7 +4322,20 @@
         options.cache = options.cache || './temp';
 
         options.docs = options.docs || false;
-    
+        options.docsConfig = config(options, 'build', 'docs');
+        options.docsConfig.oneDoc = options.docsConfig.oneDoc !== undefined ? options.docsConfig.oneDoc : true;
+        options.docsConfig.supressHeaderFooterInGeneratedDocs = options.docsConfig.supressHeaderFooterInGeneratedDocs !== undefined ? options.docsConfig.supressHeaderFooterInGeneratedDocs : false;
+        options.docsConfig.includeHeaderFooterInBundledDocs = options.docsConfig.includeHeaderFooterInBundledDocs !== undefined ? options.docsConfig.includeHeaderFooterInBundledDocs : true;
+        options.docsConfig.dest || './docs/content';
+        options.docsConfig.exclude || [];
+        options.docsConfig.include || {};
+        options.docsConfig.include.components = options.docsConfig.include.components !== undefined ? options.docsConfig.include.components : true;
+        options.docsConfig.include.namespaces = options.docsConfig.include.namespaces !== undefined ? options.docsConfig.include.namespaces : true;
+        options.docsConfig.include.types = options.docsConfig.include.types !== undefined ? options.docsConfig.include.types : true;
+        options.docsConfig.include.resources = options.docsConfig.include.resources !== undefined ? options.docsConfig.include.resources : true;
+        options.docsConfig.include.assets = options.docsConfig.include.assets !== undefined ? options.docsConfig.include.assets : true;
+        options.docsConfig.include.routes = options.docsConfig.include.routes !== undefined ? options.docsConfig.include.routes : true;
+        
         options.custom = options.custom || false; 
         options.customConfig = config(options, 'build', 'custom');
 
@@ -3657,22 +4444,6 @@
             options.zlib = require('zlib');
         }    
 
-        // logger
-        const logger = (level, msg, data, prlf, polf) => {
-            if (options.suppressLogging) { return; }
-            
-            prlf=false; polf=false; // no lf is much cleaner - so turn off all pre/post lf settings
-            
-            let colLength = 15;
-            msg = ' '.repeat(colLength - msg.length) + msg + (level === 0 ? ': ' : '');
-            if (level !== 0) { data = '- ' + data; }
-            msg = msg + '  '.repeat(level) + data.toString();
-            if (prlf) { msg = '\n' + msg; }
-            if (polf) { msg += '\n'; }
-            console.log(msg);   // eslint-disable-line no-console
-        }; 
-        options.logger = logger;
-
         // start
         logger(0, 'flairBuild', 'start ' + (options.fullBuild ? '(full)' : (options.quickBuild ? '(quick)' : '(default)')), true);
 
@@ -3680,16 +4451,17 @@
         if (options.clean) {
             delAll(options.dest);
             delAll(options.cache);
+            if (options.docs && !options.docsConfig.oneDoc) { delAll(options.docsConfig.dest); }
             logger(0, 'clean', 'done');
         }
 
         // bump version number
-        bump(options);
+        bumpVersion();
 
         // build
-        copyDeps(false, options, () => {
-            build(options, () => {
-                copyDeps(true, options, () => {
+        copyDeps(false, () => {
+            build(() => {
+                copyDeps(true, () => {
                     logger(0, 'flairBuild', 'end', true, true);
                     if (typeof cb === 'function') { cb(); } 
                 });

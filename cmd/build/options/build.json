@@ -8,6 +8,9 @@
 
     "packaged": false,
 
+    "docs": false,
+    "docsConfig": "",
+
     "fullBuild": false,
     "clean": true,
     "skipBumpVersion": false,

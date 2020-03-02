@@ -1,0 +1,15 @@
+{
+    "oneDoc": true,
+    "supressHeaderFooterInGeneratedDocs": false,
+    "includeHeaderFooterInBundledDocs": true,
+    "exclude": [],
+    "dest": "./docs/content",
+    "include": {
+        "components": true,
+        "namespaces": true,
+        "types": true,
+        "resources": true,
+        "assets": true,
+        "routes": true
+    }        
+}
