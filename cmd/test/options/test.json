@@ -1,4 +1,14 @@
 {
-    "jasmine": true,
-    "jasmineConfig": ""
+    "temp_dir": "./temp",
+    "spec_dir": "./test",
+    "relative_prefix": "../",
+    "spec_files": [
+        "specs/**/*.spec.js"
+    ],
+    "helpers": [
+        "helpers/**/*.js"
+    ],
+    "stopSpecOnExpectationFailure": true,
+    "stopOnSpecFailure": true,
+    "random": false
 }

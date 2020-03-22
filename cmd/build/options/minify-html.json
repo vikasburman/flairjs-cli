@@ -1,0 +1,9 @@
+{
+    "collapseBooleanAttributes": true,
+    "collapseWhitespace": true,
+    "conservativeCollapse": true,
+    "decodeEntities": true,
+    "removeComments": true,
+    "minifyCSS": true,
+    "minifyJS": true
+}

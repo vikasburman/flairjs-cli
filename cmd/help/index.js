@@ -45,16 +45,6 @@ const doTask = (argv, done) => {
             console.log('');
             console.log('Example: flair flag --options ./config/build/options.json');
             break;            
-        case 'pack':             
-            console.log('Usage: flair pack --options <file>');
-            console.log('');
-            console.log('   create publish package(s)');
-            console.log('');
-            console.log('   --options <file>: package options file\'s location and name');
-            console.log('   (refer online help to know the structure of package options file)');
-            console.log('');
-            console.log('Example: flair pack --options ./config/pack/options.json');
-            break;            
         case 'test':
             console.log('Usage: flair test --options <file> [flags]');
             console.log('');
