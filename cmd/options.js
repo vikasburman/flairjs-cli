@@ -686,25 +686,12 @@ module.exports = {
             content: 'content',
         },
 
-        // home page html fragment
-        // engine will load this html content as default home
-        // if any customization is required, when whole theme is not being
-        // defined, a different home.html can be kept anywhere else in docs
-        // and its path can be defined in context of docs root here
-        home: './themes/default/pages/home.html',
-
-        // shell page html fragment
-        // engine will load this html content as default shell
-        // if any customization is required, when whole theme is not being
-        // defined, a different shell.html can be kept anywhere else in docs
-        // and its path can be defined in context of docs root here
-        shell: './themes/default/pages/shell.html',
-
         // which theme to pick
         // custom themes can be installed in \themes folder
         // by keeping them inside src/docs/themes folder
-        // default theme will always be overwritten with default theme
-        theme: 'default',
+        // default theme will always be overwritten with 
+        // default theme
+        theme: '',
 
         // current version of the content
         version: 'v1',
