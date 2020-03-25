@@ -418,6 +418,7 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
     //          main: '',
     //          config: '',
     //          settings: '',
+    //          injections: ''
     //     },
     //     folders: {
     //          assets: '',
@@ -505,11 +506,12 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
     asm.folders.tests = getPathIfExists(asm.src, options.build.assembly.folders.tests);
     asm.folders.types = getPathIfExists(asm.src, options.build.assembly.folders.types);
 
-    // .files .main, .settings, .config
+    // .files .main, .settings, .config, .injections
     asm.files = {};
     asm.files.main = getPathIfExists(asm.src, options.build.assembly.files.main);
     asm.files.settings = getPathIfExists(asm.folders.settings, options.build.assembly.files.settings);
     asm.files.config = getPathIfExists(asm.folders.config, options.build.assembly.files.config);
+    asm.files.injections = getPathIfExists(asm.src, options.build.assembly.files.injections);
 
     // .asyncTypeLoading
     asm.asyncTypeLoading = (asm.files.main === ''); // in case of custom main, async-loading is not allowed otherwise yes

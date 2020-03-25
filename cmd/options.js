@@ -171,6 +171,17 @@ module.exports = {
                 // when not present (recommended not to include) it picks the default template
                 main: 'index.js',
 
+                // assembly's file injections list
+                // if any files need to be injected inside assembly in a seperate closure, these can be defined
+                // in this file at assembly root folder, where each injection can be defined as:
+                // <!-- inject: ./relative/file/path/from/asm/root/fileName.js -->
+                // any number of such injections can be defined
+                // injections are done, even before globals are added, so anything that these injected files load
+                // can be referred in globals as well
+                // no lint is executed on these injected files, however minification do happen, as min is 
+                // done on whole assembly file
+                injections: 'injections.js',
+
                 // a json file which gets embedded in assembly and
                 // all of the content is available in assembly closure as 'settings' object
                 // values of this object cannot be changed at runtime
@@ -283,7 +294,7 @@ module.exports = {
             exclude: ['_*', '*.spec.js', '*.mjs'],
 
             // assembly file generation helper template
-            main: require.resolve('./build/templates/asm/asm.js')
+            main: require.resolve('./build/templates/asm/index.js')
         },
         
         profiles: {
@@ -408,6 +419,7 @@ module.exports = {
                     include: []
                 },
 
+                // this can exclude annotation injections for special cases
                 // for flair's own usage
                 // normally does not need to be set
                 injections: {
@@ -467,27 +479,29 @@ module.exports = {
                 }
             }
         },
-        // further nodes below here can be:
-        // {            <-- for top level
-        //      pre: []
-        //      post: []
+
+        // further nodes below here can define which tasks need to be executed at which point-in-time:
+        // multiple instances of same task can be executed at same or different levels
+        // {                                    
+        //      pre: []                         <-- before anything else
+        //      post: []                        <-- after all is done
         // }
-        // assemblies: { <-- for all assemblies irrespecive of group specific assembly settings
-        //      pre: [] 
-        //      post: []
+        // assemblies: {                    
+        //      pre: []                         <-- before assembly (for all assemblies), even before assembly's own pre
+        //      post: []                        <-- after assembly (for all assemblies), but after assemblie's own post
         // }
         // profiles: {
         //      <profileName>: {
-        //          pre: [] 
-        //          post: []
+        //          pre: []                     <-- before any assembly of any group of the profile
+        //          post: []                    <-- after all assemblies of all groups of the profile
         //          groups: {
         //              <groupName>: {
-        //                  pre: []
-        //                  post: []
+        //                  pre: []             <-- before any assemblies of the group
+        //                  post: []            <-- after all assemblies of the group
         //                  assemblies: {
         //                      <assemblyName>: {
-        //                          pre: []
-        //                          post: []
+        //                          pre: []     <-- before assembly, but after all /assemblies/pre
+        //                          post: []    <-- after assembly, but before all /assemblies/post
         //                      }
         //                  }
         //              }
@@ -514,13 +528,7 @@ module.exports = {
         //         'write_flags'
         //     ],
           
-        //     // copy files
-        //     // copy specified files or folders from specified source 
-        //     // to specified destination with several modifiers to 
-        //     // take care of vary many possible scenarios
-        //     // plugin config:
-        //     //  none
-        //     copy_files: {},
+
 
         //     // copy modules
         //     // for cases where any node module is good for both
@@ -633,13 +641,7 @@ module.exports = {
                 // }
 
 
-    //     perform: {
-    //         // control switches for pre-build operations
-    //         pre: true,
 
-    //         // control switches for post-build operations
-    //         post: true
-    //     },
 
     //     // both pre and post arrays have enties like: 
     //     //  {src, dest, exclude}
@@ -652,12 +654,9 @@ module.exports = {
     //     // onlyMin: true/false                  <-- exclude a js file for which a min.js exists
     //     // exclude: []                          <-- support standard wild-cards (https://www.npmjs.com/package/matcher)
 
-    //     // pre list is processed before any profile is processed
-    //     pre: [],
+    // One task can be: DelMinIfJS: which will delete .js file if corrosponding .min.js exists
+    // or we can keep a flag in copy itself, to skip .js if .min.js exists
 
-    //     // post list is processed after all profiles are processed
-    //     post: []
-    // },    
 
     // docs generation configuration
     docs: {
@@ -665,15 +664,20 @@ module.exports = {
         perform: true,
 
         // master switch to build search data
-        buildSearch: true,
+        search: {
+            build: true
+        },
 
-        // jsfiddleExample username
-        // fiddle examples user contains the username in it
-        // all examples will be reached via this username
-        jsFiddleUserName: '',
+        // fiddle example configuration
+        fiddle: {
+            // jsfiddleExample username
+            // fiddle examples user contains the username in it
+            // all examples will be reached via this username
+            userName: '',
 
-        // jsFiddle embedded fiddle url template
-        jsFiddleUrlTemplate: 'https://jsfiddle.net/<<userName>>/<<fiddleId>>/embedded/<<options>>/',
+            // jsFiddle embedded fiddle url template
+            urlTemplate: 'https://jsfiddle.net/<<userName>>/<<fiddleId>>/embedded/<<options>>/'
+        },
 
         dest: {
             // where to copy runtime engine
@@ -689,35 +693,77 @@ module.exports = {
         // which theme to pick
         // custom themes can be installed in \themes folder
         // by keeping them inside src/docs/themes folder
+        // each theme is expectd to have following files
+        // mandatory:
+        //  ./index.json { js: [], css: [] }
+        //  ./html/index.html
+        // optional:
+        //   js files to load (defined in index.json)
+        //   css files to load (defined in index.json)
+        // templates (./html/*.html) - all optional:
+        //   header, footer
+        //   assembly
+        //   globals, global
+        //   components, component, annotation
+        //   namespaces, namespace, types
+        //   class, interface, struct, mixin, enum
+        //   const, prop, event, func
+        //   config, config-item
+        //   settings, settings-item
+        //   resources, resources-item
+        //   routes, routes-item
+        //   assets, assets-item
+        //   locales, locales-item
+        //   libs, libs-item
+        //   examples, examples-item
+        //   guides, guides-item
+        //   tests, tests-item
+        // any missing file in custom theme will be picked from default theme
         // default theme will always be overwritten with 
         // default theme
+        //
+        // NOTE: at each collection (package) level, following files can be placed in ./src/docs folder
+        // and they will be processed over and above theme files
+        //  ./index.json -- to load custom js and css at package level
+        //  ./html/index.html -- to serve as package/collection specific home
+        //  ./html/header.html -- to server as package/collection specific header
+        //  ./html/footer.html -- to server as package/collection specific footer
+        // with this way, without making a custom theme, still custom home can be provided for the package
         theme: '',
 
-        // current version of the content
-        version: 'v1',
+        // in a multi-project scenario, where docs need to be served from one place as collection
+        // there must be one main repo which has this definition setup, and all
+        // this also needs to write some post-build commands to download/copy docs
+        // from other repos at right place
+        // e.g., { name: 'flairjs', title: 'Flair.js' }
+        packages: [],
 
-        // all available versions to show on the ui
-        // this will be generated as versions.json file on given dest folder
-        // from where engines can pick available versions
-        // e.g., { id: 'v1', name: '1.x' }
-        versions: [],
+        versions: {
+            // all available versions to show on the ui
+            // e.g., { name: 'v1', title: '1.x' }
+            list: [],
 
-        // default locale of current version
-        locale: 'en',
+            // current version details
+            current: {
+                // to be picked by default 
+                name: 'v1',
 
-        // version specific available locales
-        // this will be generated as locales.json file on given version root folder
-        // from where engines can pick available locales of the version
-        // NOTE: currently only english language is supported, as no translation or alternative
-        // approach is defined. However for UI sake, this process exists
-        // e.g., { id: 'en', name: 'English' }
-        locales: [],        
+                // version specific available locales
+                locales: {
+                    // all available locales for this version to show on the ui
+                    //  e.g., { name: 'en', title: 'English' }
+                    // NOTE: currently only english language is supported, as no translation or alternative
+                    // approach is defined. However for UI sake, this process exists                    
+                    list: [], 
+                    
+                    // default locale of current version
+                    current: 'en'
+                }
+            }
+        },
 
         // wildcards for assembly names for which documentation is not to be processed
         exclude: [],
-
-        // keep raw json files
-        keepJson: true,
 
         // any whitelisted custom symbols that can be used in documentation blocks
         // this way, typos can be avoided when it will throw for any unknown symbols

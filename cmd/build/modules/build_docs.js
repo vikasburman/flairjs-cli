@@ -2,6 +2,8 @@ const chalk = require('chalk');
 const path = require('path');
 const fsx = require('fs-extra');
 const pathJoin = require('../../shared/modules/path_join');
+const md2html = require('../../shared/modules/md2html').fragment;
+const mdPage2html = require('../../shared/modules/md2html').page;
 const MiniSearch = require('minisearch');
 const copyDir = require('copy-dir');
 
@@ -13,31 +15,24 @@ exports.start = async function(options) {
     // ensure docs root exists
     fsx.ensureDirSync(options.docs.dest.root);
 
-    // copy default docs from source as is
-    let docs = pathJoin(options.build.src, 'docs');
-    if(fsx.pathExistsSync(docs)) {
-        copyDir.sync(docs, options.docs.dest.root, {
-            utimes: true,
-            mode: true,
-            cover: true
-        });
-    }
     // copy themes folder as such, so default themes will be copied
     // even if there is any existing default themes, it will overwrite that
-    let inbuiltThemes = require.resolve('../templates/docs/themes/default/js/index.js').replace('/default/js/index.js', ''); 
+    let inbuiltThemes = require.resolve('../templates/docs/themes/default/index.json').replace('/default/index.json', ''); 
     copyDir.sync(inbuiltThemes, pathJoin(options.docs.dest.root, 'themes'), {
         utimes: true,
         mode: true,
         cover: true
     });
 
-    // copy engine files at root
-    let engine = require.resolve('../templates/docs/engine/index.html').replace('index.html', ''); 
-    copyDir.sync(engine, options.docs.dest.root, {
+    // copy engine files at root/engine and mainfile at root
+    let engineFile = require.resolve('../templates/docs/engine/index.html'),
+        engineRoot = engineFile.replace('index.html', ''); 
+    copyDir.sync(engineRoot, pathJoin(options.docs.dest.root, 'engine'), {
         utimes: true,
         mode: true,
         cover: true
     });
+    fsx.copyFileSync(engineFile, pathJoin(options.docs.dest.root, 'index.html')); // copy at root, so gets loaded automatically
 };
 exports.build = async function(options, asm) {
     let asmDoc = getAsmHome(options, asm),
@@ -75,16 +70,19 @@ exports.finish = async function(options) {
     writeGuides(options);
 
     // write search
-    if (options.docs.buildSearch) { writeSearch(options); }
+    if (options.docs.search.build) { writeSearch(options); }
 
-    // write locale home (./content/v1/en/index.json)
+    // (./content/flairjs/v1/en/index.json)
     writeLocaleHome(options);    
 
-    // write version home (./content/v1/index.json)
-    writeVersionHome(options);
+    // (./content/flairjs/v1/index.json)
+    writeVersionHome(options);    
 
-    // write home (./index.json)
-    writeHome(options);
+    // (./content/flairjs/index.json)
+    writeCollectionHome(options);
+
+    // (./index.json)
+    writeDocsHome(options);
 
     // cleanup
     delete options.docs.json;
@@ -150,6 +148,8 @@ const extractSymbols = (options, name, block) => {
     //  @remarks                                                
     //  @example
     //  @fiddle  
+    //  @spec
+    //  @param
     let lines = block.split('\n'),
         line = '',
         symbol = '',
@@ -166,7 +166,7 @@ const extractSymbols = (options, name, block) => {
         type4 = ['returns', 'yields', 'throws'],
         type5 = ['param', 'prop', 'const', 'fiddle', 'item', 'spec'],
         type6 = ['func', 'event'],
-        type7 = ['example', 'remarks', 'fiddle', 'spec'],
+        type7 = ['example', 'remarks', 'fiddle', 'spec', 'param'],
         multiInstance = ['param', 'seealso', 'throws'];
    
     for(let i = 0; i < lines.length; i++) {
@@ -273,147 +273,6 @@ const extractSymbols = (options, name, block) => {
     return {}; // empty block
 };
 const Annotation = function(symbols, type, name, typeOfType) {
-    const defineFiddle = () => {
-        let _fiddle = symbols['fiddle'] || [];
-        if (_fiddle.length > 0) {
-            ano.fiddle = {
-                id: _fiddle[0] || '',
-                name: _fiddle[1] || '',
-                desc: _fiddle[2] || '',
-                remarks: _fiddle[3] || '',
-            };
-            if (!ano.fiddle.id) { throw `Fiddle id must be defined at @fiddle symbol. (${ano.name})`; }
-            if (!ano.fiddle.name) { throw `Fiddle name must be defined at @fiddle symbol. (${ano.name})`; }
-        }
-    };
-    const defineSpec = () => {
-        let _spec = symbols['spec'] || [];
-        if (_spec.length > 0) {
-            ano.spec = {
-                file: _spec[0] || '',
-                name: _spec[1] || '',
-                desc: _spec[2] || '',
-                remarks: _spec[3] || ''
-            };
-            if (!ano.spec.file) { throw `Spec file must be defined at @spec symbol. (${ano.name})`; }
-            if (!ano.spec.name) { throw `Spec name must be defined at @spec symbol. (${ano.name})`; }
-        }
-    };
-    const defineModifiers = () => {
-        if (ano.isClass) {
-            if (!ano.static) {
-                if (symbols['abstract']) {
-                    ano.modifiers.push('abstract');
-                } else if (symbols['sealed']) {
-                    ano.modifiers.push('sealed');
-                }
-            }
-        } else {
-            if (!ano.static) {
-                if (symbols['abstract']) {
-                    ano.modifiers.push('abstract');
-                } else if (symbols['virtual']) {
-                    ano.modifiers.push('virtual');
-                } else if (symbols['override']) {
-                    ano.modifiers.push('override');
-                    if (symbols['sealed']) { ano.modifiers.push('sealed'); }
-                }
-            }
-
-            // readonly
-            if (ano.isProperty && symbols['readonly']) { ano.modifiers.push('readonly'); }
-        }
-    };
-    const defineParamsSignatureAndOverload = () => {
-        let _params = symbols['param'] || [],
-            p = null;
-        for(let _p of _params) { // [ { type, name, desc } ]
-            p = { type: _p[0], name: _p[1], desc: _p[2]};
-            if (!p.type) { throw `Param type must be defined at @param symbol. (${ano.name})`; }
-            if (!p.name) { throw `Param name must be defined at @param symbol. (${ano.name})`; }
-            ano.params.push(p);
-        }
-
-        // signature
-        let signatureTypesList = '';
-        if (ano.params && ano.params.length > 0) {
-            for(let p of ano.params) {
-                if (signatureTypesList) { signatureTypesList += ', '; }
-                signatureTypesList += p.type;
-            }
-            ano.signature = `${ano.name}(${signatureTypesList})`;
-        } else {
-            ano.signature = `${ano.name}()`;
-        }
-
-        // overload
-        if (typeof ano.overload !== 'undefined') {    
-            ano.overload = symbols['overload'] ? true : false;
-            if (ano.overload) { ano.overloadId = ''; } // will be defined once we have all
-        }        
-    };
-    const defineASyncAndGenerator = () => {
-        // async, generator
-        if (typeof ano.async !== 'undefined') {    
-            ano.async = symbols['async'] ? true : false;
-            if (!ano.async) {
-                ano.generator = symbols['generator'] ? true : false;
-            }
-        }
-    };
-    const defineReturnsYieldsAndThrows = () => {
-        // returns
-        if (ano.isEvent || ano.isAnnotation) {
-            ano.returns = {
-                type: 'void',
-                desc: ''
-            };             
-        } else {
-            if (symbols['returns']) { 
-                ano.returns = {
-                    type: symbols['returns'][0],
-                    desc: symbols['returns'][1]  || ''
-                };
-                if (!ano.returns.type) { throw `Return type must be defined at @returns symbol. It can be omitted altogether, if there is no return value. (${ano.name})`; }
-            } else {
-                ano.returns = {
-                    type: 'void',
-                    desc: ''
-                };         
-            }
-        }
-
-        // yields
-        if (typeof ano.generator !== 'undefined') {
-            if (ano.generator) {
-                let _returns = ano.returns;
-                ano.returns = {
-                    type: _returns.type || 'Generator',
-                    desc: _returns.desc || ''
-                };
-                if (!symbols['yields']) { throw `@yields must be defined for a generator function. (${ano.name})`; }
-                ano.yields = {
-                    type: symbols['yields'][0],
-                    desc: symbols['yields'][1] || ''
-                };
-                if (!ano.yields.type) { throw `Yield type must be defined at @yields symbol. (${ano.name})`; }
-            } else {
-                ano.yields = null;
-            }
-        }
-
-        // throws
-        let _throws = symbols['throws'] || [], // { type, desc }
-            e = null;
-        if (_throws.length > 0) {
-            for(let _e of _throws) { // [ [type, desc] ]
-                e = { type: _e[0], desc: _e[1] || ''};
-                if (!e.type) { throw `Exception type must be defined at @throws symbol. (${ano.name})`; }
-                ano.throws.push(e);
-            }
-        }
-    };
-
     // All Known Symbols
     /** 
      * @type | @func <name> - <desc> | @prop {<type>} name - <desc> | @const {<value>} name - <desc> | @event <name> - <desc> | @item {<link>} name - <desc>
@@ -467,13 +326,12 @@ const Annotation = function(symbols, type, name, typeOfType) {
     //      | zebra stripes | are neat      |    $1 |
     //  Blockquotes: > / <blockquote>text</blockquote>
     //  HL: --- / hl
-    //  Image: (none) / <img src="./path/file.ext"> <-- since images must be kept in src/docs, which will be copied in docs root, assume path in relation to docs root
+    //  Image: ![text](link) / <img src="./path/file.ext"> <-- use dynamic path injections techniques using data-binding 
     //  Superscript: (none) / <sup>text</sup>
     //  Subscript: (none) / <sub>text</sub>
     //  Code: ```text``` / <code>text</code>
     //  Keyword: `text` / (none)
-    //  Script: (none) / (none) <-- <script> tags will be stripped, if found
-    //  Hyperlinks: (none) / <a href=""></a>
+    //  Hyperlinks: [text](link) / <a href=""></a>
     //      links can be external or internal:
     //      - external: can refer to any external website
     //          href="https://google.com"
@@ -511,6 +369,164 @@ const Annotation = function(symbols, type, name, typeOfType) {
     //              - if not defined, and there are overloads, it will take to first overload method
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+    const defineSeeAlso = () => {
+        let _seeAlso = symbols['seealso'] || []; // [desc]
+        if (_seeAlso.length > 0) {
+            ano.seealso = [];
+            for(let item of _seeAlso) {
+                ano.seealso.push(md2html(item));
+            }
+        }
+    };
+    const defineFiddle = () => {
+        let _fiddle = symbols['fiddle'] || [];
+        if (_fiddle.length > 0) {
+            ano.fiddle = {
+                id: _fiddle[0] || '',
+                name: _fiddle[1] || '',
+                desc: md2html(_fiddle[2] || ''),
+                remarks: md2html(_fiddle[3] || ''),
+            };
+            if (!ano.fiddle.id) { throw `Fiddle id must be defined at @fiddle symbol. (${ano.name})`; }
+            if (!ano.fiddle.name) { throw `Fiddle name must be defined at @fiddle symbol. (${ano.name})`; }
+        }
+    };
+    const defineSpec = () => {
+        let _spec = symbols['spec'] || [];
+        if (_spec.length > 0) {
+            ano.spec = {
+                file: _spec[0] || '',
+                name: _spec[1] || '',
+                desc: md2html(_spec[2] || ''),
+                remarks: md2html(_spec[3] || '')
+            };
+            if (!ano.spec.file) { throw `Spec file must be defined at @spec symbol. (${ano.name})`; }
+            if (!ano.spec.name) { throw `Spec name must be defined at @spec symbol. (${ano.name})`; }
+        }
+    };
+    const defineModifiers = () => {
+        if (ano.isClass) {
+            if (!ano.static) {
+                if (symbols['abstract']) {
+                    ano.modifiers.push('abstract');
+                } else if (symbols['sealed']) {
+                    ano.modifiers.push('sealed');
+                }
+            }
+        } else {
+            if (!ano.static) {
+                if (symbols['abstract']) {
+                    ano.modifiers.push('abstract');
+                } else if (symbols['virtual']) {
+                    ano.modifiers.push('virtual');
+                } else if (symbols['override']) {
+                    ano.modifiers.push('override');
+                    if (symbols['sealed']) { ano.modifiers.push('sealed'); }
+                }
+            }
+
+            // readonly
+            if (ano.isProperty && symbols['readonly']) { ano.modifiers.push('readonly'); }
+        }
+    };
+    const defineParamsSignatureAndOverload = () => {
+        let _params = symbols['param'] || [],
+            p = null;
+        for(let _p of _params) { // [ { type, name, desc } ]
+            p = { 
+                type: md2html(_p[0] || ''), 
+                name: _p[1] || '', 
+                desc: md2html(_p[2] || ''),
+                remarks: md2html(_p[3] || '')
+            };
+            if (!p.type) { throw `Param type must be defined at @param symbol. (${ano.name})`; }
+            if (!p.name) { throw `Param name must be defined at @param symbol. (${ano.name})`; }
+            ano.params.push(p);
+        }
+
+        // signature
+        let signatureTypesList = '';
+        if (ano.params && ano.params.length > 0) {
+            for(let p of ano.params) {
+                if (signatureTypesList) { signatureTypesList += ', '; }
+                signatureTypesList += p.type;
+            }
+            ano.signature = `${ano.name}(${signatureTypesList})`;
+        } else {
+            ano.signature = `${ano.name}()`;
+        }
+
+        // overload
+        if (typeof ano.overload !== 'undefined') {    
+            ano.overload = symbols['overload'] ? true : false;
+            if (ano.overload) { ano.overloadId = ''; } // will be defined once we have all
+        }        
+    };
+    const defineASyncAndGenerator = () => {
+        // async, generator
+        if (typeof ano.async !== 'undefined') {    
+            ano.async = symbols['async'] ? true : false;
+            if (!ano.async) {
+                ano.generator = symbols['generator'] ? true : false;
+            }
+        }
+    };
+    const defineReturnsYieldsAndThrows = () => {
+        // returns
+        if (ano.isEvent || ano.isAnnotation) {
+            ano.returns = {
+                type: 'void',
+                desc: ''
+            };             
+        } else {
+            if (symbols['returns']) { 
+                ano.returns = {
+                    type: md2html(symbols['returns'][0] || ''),
+                    desc: md2html(symbols['returns'][1]  || '')
+                };
+                if (!ano.returns.type) { throw `Return type must be defined at @returns symbol. It can be omitted altogether, if there is no return value. (${ano.name})`; }
+            } else {
+                ano.returns = {
+                    type: 'void',
+                    desc: ''
+                };         
+            }
+        }
+
+        // yields
+        if (typeof ano.generator !== 'undefined') {
+            if (ano.generator) {
+                let _returns = ano.returns;
+                ano.returns = {
+                    type: _returns.type || 'Generator',
+                    desc: md2html(_returns.desc || '')
+                };
+                if (!symbols['yields']) { throw `@yields must be defined for a generator function. (${ano.name})`; }
+                ano.yields = {
+                    type: md2html(symbols['yields'][0] || ''),
+                    desc: md2html(symbols['yields'][1] || '')
+                };
+                if (!ano.yields.type) { throw `Yield type must be defined at @yields symbol. (${ano.name})`; }
+            } else {
+                ano.yields = null;
+            }
+        }
+
+        // throws
+        let _throws = symbols['throws'] || [], // { type, desc }
+            e = null;
+        if (_throws.length > 0) {
+            for(let _e of _throws) { // [ [type, desc] ]
+                e = { 
+                    type: md2html(_e[0] || ''), 
+                    desc: md2html(_e[1] || '')
+                };
+                if (!e.type) { throw `Exception type must be defined at @throws symbol. (${ano.name})`; }
+                ano.throws.push(e);
+            }
+        }
+    };
+
     // common for all
     /**
      * @desc <desc>                              
@@ -529,18 +545,16 @@ const Annotation = function(symbols, type, name, typeOfType) {
         name: name || '',
         memberType: '',
         scope: 'public',
-        desc: symbols['desc'] || '',
-        deprecated: symbols['deprecated'] || '',
-        restricted: symbols['restricted'] || '',
-        since: symbols['since'] || '',
-        remarks: symbols['remarks'] || '',
-        example: symbols['example'] || '',
-        seealso: symbols['seealso'] || [] // [desc]
+        desc: md2html(symbols['desc'] || ''),
+        deprecated: md2html(symbols['deprecated'] || ''),
+        restricted: md2html(symbols['restricted'] || ''),
+        since: md2html(symbols['since'] || ''),
+        remarks: md2html(symbols['remarks'] || ''),
+        example: md2html(symbols['example'] || '')
     };
     defineFiddle();
     defineSpec();
-
-    // extended
+    defineSeeAlso();
 
     ////////////////////////////////////////////////////////////////
     // super-set of type/type-of-type relations
@@ -580,6 +594,7 @@ const Annotation = function(symbols, type, name, typeOfType) {
     // }
     ////////////////////////////////////////////////////////////////
 
+    // extended
     switch (type) {
         case 'type':
             // common for all type of types
@@ -643,7 +658,7 @@ const Annotation = function(symbols, type, name, typeOfType) {
                      * @static                                                              
                     */
                     ano.isStruct = true;
-                    ano.memberType = 'Structures';
+                    ano.memberType = 'Structs';
                     ano.static = symbols['static'] ? true : false;
                     break;
                 case 'enum':
@@ -651,7 +666,7 @@ const Annotation = function(symbols, type, name, typeOfType) {
                      * @flags
                     */
                     ano.isEnum = true;
-                    ano.memberType = 'Enumerations';
+                    ano.memberType = 'Enums';
                     ano.flags = symbols['flags'] ? true : false;
                     break;
                 case 'mixin':
@@ -783,9 +798,9 @@ const Annotation = function(symbols, type, name, typeOfType) {
             ano.isProperty = true;
             ano.isMember = true;
             ano.memberType = 'Properties';
-            ano.type = symbols['prop'][0] || 'object';
+            ano.type = md2html(symbols['prop'][0] || 'object');
             ano.name = symbols['prop'][1]; if(!ano.name) { throw `Property name must be defined at @prop symbol.`; }
-            ano.desc = (symbols['prop'][2] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : '');
+            ano.desc = md2html((symbols['prop'][2] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
             ano.scope = symbols['private'] || symbols['protected'] || symbols['public'] || 'public'; 
             ano.static = symbols['static'] ? true : false;
             ano.optional = symbols['optional'] ? true : false;
@@ -804,9 +819,9 @@ const Annotation = function(symbols, type, name, typeOfType) {
             ano.isConstant = true;
             ano.isMember = true;
             ano.memberType = 'Constants';
-            ano.type = symbols['const'][0] || 'object';
+            ano.type = md2html(symbols['const'][0] || 'object');
             ano.name = symbols['const'][1]; if(!ano.name) { throw `Constant name must be defined at @const symbol.`; }
-            ano.desc = (symbols['const'][2] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : '');
+            ano.desc = md2html((symbols['const'][2] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
             ano.scope = symbols['private'] || symbols['protected'] || symbols['public'] || 'public'; 
             ano.static = symbols['static'] ? true : false;
             ano.optional = symbols['optional'] ? true : false;
@@ -821,7 +836,7 @@ const Annotation = function(symbols, type, name, typeOfType) {
             ano.memberType = 'Items';
             ano.link = symbols['item'][0]; if(!ano.link) { throw `Item link must be defined at @item symbol.`; }
             ano.name = symbols['item'][1]; if(!ano.name) { throw `Item name must be defined at @item symbol.`; }
-            ano.desc = (symbols['item'][2] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : '');
+            ano.desc = md2html((symbols['item'][2] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
             break;                                     
         case 'func':
             /** 
@@ -840,7 +855,7 @@ const Annotation = function(symbols, type, name, typeOfType) {
             ano.isMethod = true;
             ano.isMember = true;
             ano.name = symbols['func'][0]; if(!ano.name) { throw `Function (method) name must be defined at @func symbol.`; }
-            ano.desc = (symbols['func'][1] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : '');
+            ano.desc = md2html((symbols['func'][1] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
             ano.isConstructor = (ano.name === 'construct');
             ano.isDestructor = (ano.name === 'dispose');
             ano.memberType = (ano.isConstructor ? 'Constructors' : (ano.isDestructor ? 'Destructors' : 'Methods'))
@@ -879,7 +894,7 @@ const Annotation = function(symbols, type, name, typeOfType) {
             ano.isMember = true;
             ano.memberType = 'Events';
             ano.name = symbols['event'][0]; if(!ano.name) { throw `Event name must be defined at @event symbol.`; }
-            ano.desc = (symbols['event'][1] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : '');
+            ano.desc = md2html((symbols['event'][1] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
             ano.scope = symbols['private'] || symbols['protected'] || symbols['public'] || 'public'; 
             ano.static = symbols['static'] ? true : false;
             ano.optional = symbols['optional'] ? true : false;
@@ -932,17 +947,10 @@ const symbolsToAnnotation = (symbols, name, type) => {
     return annotation;
 };
 const buildAnnotationData = (options, asm, member, members, mainAnnotation, itemAnnotations, constAnnotations, propAnnotations, methodAnnotations, eventAnnotations) => {
-    const processDocText = (item) => {
-        // TODO:
-    };
     const addDocsInfo = (item, parent) => {
         // add docs info
         item.docs = {
             template: '',
-            home: {
-                name: options.package.title,
-                link: '/'
-            },
             asm: {
                 name: (asm ? asm.name : ''),
                 link: (asm ? asm.name : '')
@@ -1018,7 +1026,6 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
                 throw `Unknown type '${item.typeOfType}'. (${item.name}))`;
             }
         } else {
-           //fsx.writeJSONSync('./docs/vikas.json', item, { encoding: 'utf8', spaces: '\t' });
            throw `Unknown type. (${item.name}))`;
         }
 
@@ -1027,13 +1034,8 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
             item.docs.parent.name = asm.name;
             item.docs.parent.link = `${asm.name}`;
         }
-
-        // process all text for any html sanity check
-        // as well as for applying right hyperlinks
-        processDocText(item);
     };
 
-    
     // build data
     let data = mainAnnotation;
     addDocsInfo(data, member);
@@ -1463,7 +1465,7 @@ const getAnnotations = (options, asm, parent, content, name, type) => {
 
 // file writers
 const getDest = (options, ...more) => {
-    return pathJoin(options.docs.dest.root, options.docs.dest.content, options.docs.version, options.docs.locale, ...more);
+    return pathJoin(options.docs.dest.root, options.docs.dest.content, options.package.name, options.docs.versions.current.name, options.docs.versions.current.locales.current, ...more);
 };
 const plainWrite = (options, file, data) => {
     fsx.ensureDirSync(path.dirname(file));
@@ -1471,7 +1473,7 @@ const plainWrite = (options, file, data) => {
 };
 const writeFile = (options, asm, file, doc) => {
     // add to search
-    if (options.docs.buildSearch) { addToSearch(options, asm, file, doc); }
+    if (options.docs.search.build) { addToSearch(options, asm, file, doc); }
 
     // write file
     let docFile = getDest(options, file);
@@ -1798,7 +1800,7 @@ const writeExamples = (options) => {
         let file = getDest(options, homeDoc.examples);
 
         // process each example
-        let jsFiddleUrl = options.docs.jsFiddleUrlTemplate.replace('<<userName>>', options.docs.jsFiddleUserName),
+        let jsFiddleUrl = options.docs.fiddle.UrlTemplate.replace('<<userName>>', options.docs.fiddle.userName),
             exampleFile = '',
             newList = [];
         for(let item of data.items) {
@@ -1873,20 +1875,6 @@ const writeGuides = (options) => {
         delete homeDoc.guides;
     }
 };
-const writeVersionHome = (options) => {
-    // data
-    let data = {
-        locales: options.docs.locales, // store locales info as is
-        current: options.docs.version,
-        file: './index.json'
-    };
-
-    // file
-    let file = pathJoin(options.docs.dest.root, options.docs.dest.content, options.docs.version, 'index.json');
-
-    // write
-    plainWrite(options, file, data);
-};
 const writeLocaleHome = (options) => {
     // data
     let data = options.docs.json;
@@ -1897,16 +1885,279 @@ const writeLocaleHome = (options) => {
     // write
     plainWrite(options, file, data);
 };
-const writeHome = (options) => {
+const writeVersionHome = (options) => {
+    let currentVersionRoot = pathJoin(options.docs.dest.root, options.docs.dest.content, options.package.name, options.docs.versions.current.name || 'v1');
+
+    const getLocales = () => {
+        // get locales list
+        let list = options.docs.versions.current.locales.list;
+        if (list.length === 0) {
+            list.push({ name: 'en', title: 'English' }); // by default give en
+        }
+
+        // add file info for each locale
+        for(let item of list) { 
+            item.root = pathJoin(currentVersionRoot, item.name),
+            item.file =  pathJoin(currentVersionRoot, item.name, 'index.json'); 
+        } // localized content's info file
+
+        // return
+        return list;
+    };
+
     // data
     let data = {
-        content: pathJoin(options.docs.dest.root, options.docs.dest.content),
-        theme: pathJoin(options.docs.dest.root, 'themes', options.docs.theme),
-        home: pathJoin(options.docs.dest.root, options.docs.home),
-        shell: pathJoin(options.docs.dest.root, options.docs.shell),
-        versions: options.docs.versions, // store version info as is
-        current: options.docs.version,
-        file: './index.json'
+        locales: {
+            root: currentVersionRoot,
+            list: getLocales(),
+            current: options.docs.versions.current.locales.current || 'en'
+        }
+    };
+
+    // file
+    let file = pathJoin(currentVersionRoot, 'index.json');
+
+    // write
+    plainWrite(options, file, data);
+};
+const writeCollectionHome = (options, ) => {
+    let currentCollectionRoot = pathJoin(options.docs.dest.root, options.docs.dest.content, options.package.name);
+
+    const getVersions = () => {
+        // get versions list
+        let list = options.docs.versions.list;
+        if (list.length === 0) {
+            list.push({ name: 'v1', title: '1.x' }); // by default give v1
+        }
+
+        // add file info for each version
+        for(let item of list) { 
+            item.root = pathJoin(currentCollectionRoot, item.name),
+            item.file =  pathJoin(currentCollectionRoot, item.name, 'index.json'); 
+        } // version's locale info file
+
+        // return
+        return list;
+    };
+    const getCustomFiles = () => {
+        let collectionIndexJson = pathJoin(options.build.src, 'docs', 'index.json');
+        let custom = {
+            files: {
+                js: [],
+                css: []
+            },
+            templates: {
+                index: '',
+                header: '',
+                footer: ''
+            }
+        };        
+        if (fsx.existsSync(collectionIndexJson)) {
+            let json = fsx.readJSONSync(collectionIndexJson, 'utf8');
+
+            // it is expected that index.json will define file in context of the docs root file
+            // which means, it will add here any path before docs's own path in context of the package
+            for(let js of json.js) { custom.files.js.push(pathJoin(currentCollectionRoot, js)); }
+            for(let css of json.css) { custom.files.css.push(pathJoin(currentCollectionRoot, css)); }
+
+            // package specific index file
+            let templateFile = pathJoin(currentCollectionRoot, '', 'index');
+            if (fsx.existsSync(templateFile)) { custom.templates.index = templateFile; }
+
+            // package specific header/footer
+            templateFile = pathJoin(currentCollectionRoot, 'html', 'header');
+            if (fsx.existsSync(templateFile)) { custom.templates.header = templateFile; }
+            templateFile = pathJoin(currentCollectionRoot, 'html', 'footer');
+            if (fsx.existsSync(templateFile)) { custom.templates.footer = templateFile; }
+        } 
+
+        // return
+        return custom;        
+    };
+    const getCollectionInfo = () => {
+        let package = options.package;
+        let info = {
+            name: package.name || '',
+            title: package.title || '',
+            desc: package.description || '',
+            copyright: package.copyright || '',
+            license: package.license || '',
+            version: package.version || ''
+        };
+        return info;
+    };
+
+    // data
+    let data = {
+        info: getCollectionInfo(),
+        versions: {
+            root: currentCollectionRoot,
+            list: getVersions(),
+            current: options.docs.versions.current.name || 'v1'
+        },
+        pages: {},
+        custom: getCustomFiles()
+    };
+
+    // copy default docs folder of this package at collection home as well
+    // except index.json (as that is processed above already)
+    let docs = pathJoin(options.build.src, 'docs');
+    if(fsx.pathExistsSync(docs)) {
+        let pageName = '',
+            pageFile = '';
+        copyDir.sync(docs, currentCollectionRoot, {
+            utimes: true,
+            mode: true,
+            cover: true,
+            filter: function(stat, filepath){
+                // do not want copy index.json file
+                if(stat === 'file' && path.basename(filepath) === 'index.json') {
+                  return false;
+                }
+
+                // convert md pages to html here
+                // and add to list, so they can be loaded using 
+                // page load technique of engine
+                if (path.extname(filepath) === '.md') {
+                    pageName = path.basename(filepath).replace('.md', '');
+                    pageFile = './' + filepath;
+                    pageFile = pathJoin(currentCollectionRoot, pageFile.replace(docs, '')).replace('.md', '.html');
+                    data.pages[pageName] = pageFile;
+                    fsx.writeFileSync(pageFile, mdPage2html(fsx.readFileSync(filepath, 'utf8')), 'utf8');
+                    return false; // since copied the html version
+                }
+
+                // copy
+                return true;
+              }
+        });
+    }
+
+    // file
+    let file = pathJoin(currentCollectionRoot, 'index.json')
+
+    // write
+    plainWrite(options, file, data);
+};
+const writeDocsHome = (options) => {
+    // theme
+    let themeRoot = pathJoin(options.docs.dest.root, 'themes', options.docs.theme || 'default'),
+        collectionsRoot = pathJoin(options.docs.dest.root, options.docs.dest.content);
+
+    const getThemeFile = (type, file) => {
+        file = pathJoin(themeRoot, type, file);
+        if (!fsx.existsSync(file)) { 
+            file = pathJoin(options.docs.dest.root, 'themes', 'default', type, file);
+            if (!fsx.existsSync(file)) { throw `Theme file missing from default theme. (./${type}/${file})`; }
+         }
+         return file;
+    };
+    const getThemeTemplate = (file) => { return getThemeFile('html', file + '.html'); }
+    const getThemeFilesToLoad = () => {
+        let json = fsx.readJSONSync(getThemeFile('', 'index.json'), 'utf8'),
+        data = {
+            js: [],
+            css: []
+        };
+
+        // it is expected that index.json will define file in context of the theme root file
+        // which means, it will add here any path before theme's own path
+        for(let js of json.js) { data.js.push(getThemeFile('', js)); }
+        for(let css of json.css) { data.css.push(getThemeFile('', css)); }
+
+        // return
+        return data;
+    };
+    const getCollections = () => {
+        // get packages list
+        let list = options.docs.packages;
+        if (list.length === 0) {
+            list.push({ name: options.package.name, title: options.package.title }); // by default give current package nane, if not defined
+        }
+        
+        // add file info for each package
+        for(let item of list) { 
+            item.root = pathJoin(collectionsRoot, item.name),
+            item.file = pathJoin(collectionsRoot, item.name, 'index.json'); 
+        }
+
+        // return
+        return list;
+    };
+    const getThemeData = () => {
+        return {
+            root: themeRoot,
+            files: getThemeFilesToLoad(),
+            templates: {
+                index: getThemeTemplate('index'),
+                header: getThemeTemplate('header'),
+                footer: getThemeTemplate('footer'),
+                
+                assembly: getThemeTemplate('assembly'),
+                search: getThemeTemplate('search'),
+                '404': getThemeTemplate('404'),
+
+                globals: getThemeTemplate('globals'),
+                global: getThemeTemplate('global'),
+
+                components: getThemeTemplate('components'),
+                component: getThemeTemplate('component'),
+                annotation: getThemeTemplate('annotation'),
+
+                namespaces: getThemeTemplate('namespaces'),
+                namespace: getThemeTemplate('namespace'),
+                
+                types: getThemeTemplate('types'),
+                class: getThemeTemplate('class'),
+                interface: getThemeTemplate('interface'),
+                mixin: getThemeTemplate('mixin'),
+                struct: getThemeTemplate('struct'),
+                enum: getThemeTemplate('enum'),
+
+                const: getThemeTemplate('const'),
+                prop: getThemeTemplate('prop'),
+                event: getThemeTemplate('event'),
+                func: getThemeTemplate('func'),
+
+                config: getThemeTemplate('config'),
+                'config-item': getThemeTemplate('config-item'),
+                settings: getThemeTemplate('settings'),
+                'settings-item': getThemeTemplate('settings-item'),
+                
+                resources: getThemeTemplate('resources'),
+                'resources-item': getThemeTemplate('resources-item'),
+                routes: getThemeTemplate('routes'),
+                'routes-item': getThemeTemplate('routes-item'),
+                
+                assets: getThemeTemplate('assets'),
+                'assets-item': getThemeTemplate('assets-item'),
+                libs: getThemeTemplate('libs'),
+                'libs-item': getThemeTemplate('libs-item'),
+                locales: getThemeTemplate('locales'),
+                'locales-item': getThemeTemplate('locales-item'),
+
+                examples: getThemeTemplate('examples'),
+                'examples-item': getThemeTemplate('examples-item'),
+                guides: getThemeTemplate('guides'),
+                'guides-item': getThemeTemplate('guides-item'),
+                tests: getThemeTemplate('tests'),
+                'tests-item': getThemeTemplate('tests-item')
+            }
+        };
+    };
+
+    // data
+    let data = {
+        builder: {
+            name: options.buildInfo.name,
+            version: options.buildInfo.version
+        },         
+        collections: {
+            root: collectionsRoot,
+            list: getCollections(),
+            current: options.package.name // always current one
+        },
+        theme: getThemeData()
     };
 
     // file
@@ -1930,21 +2181,6 @@ const getHome = function(options) {
     // get data
     let data = getAnnotations(options, null, null, content, options.package.title, 'home');
 
-    // project
-    let project = options.package;
-    data.package = {
-        name: project.name,
-        title: project.title,
-        desc: project.desc,
-        copyright: project.copyright,
-        license: project.license,
-        version: project.version
-    };
-    data.builder = {
-        name: options.buildInfo.name,
-        version: options.buildInfo.version
-    };
-
     // assemblies
     data.asms = []; // { file: '', name: '', type: '', desc: '' }
     
@@ -1961,7 +2197,7 @@ const getHome = function(options) {
     data.guides = getAnnotations(options, null, null, content, options.package.title, 'guides');
 
     // search
-    if (options.docs.buildSearch) {
+    if (options.docs.search.build) {
         data.search = './search.json';
         data.searchDump = []; // this will be deleted at the end
     }

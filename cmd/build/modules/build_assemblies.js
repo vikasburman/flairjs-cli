@@ -138,10 +138,36 @@ const injectAnnotations = (content, result, annotations) => {
     // return
     return content;
 };
+const injectFiles = (options, asm, content) => { // <!-- inject: ./file -->
+    // Unescaped \s*([\(\)\w@_\-.\\\/]+)\s*
+    const FILENAME_PATTERN = '\\s*([\\(\\)\\w@_\\-.\\\\/]+)\\s*';
+    const FILENAME_MARKER = '<filename>';
+    const DEFAULT_PATTERN = '<!--\\s*inject:<filename>-->';
+    
+    const injectPattern = '^([ \\t]*)(.*?)' + DEFAULT_PATTERN.replace(FILENAME_MARKER, FILENAME_PATTERN);
+    const regex = new RegExp(injectPattern, 'm');
+    let fileName, textBefore, whitespace, currMatch, match, item, name;
+    
+    while ((currMatch = regex.exec(content))) {
+        match = currMatch[0];
+        whitespace = currMatch[1];
+        textBefore = currMatch[2];
+        fileName = currMatch[3];
+
+        var injectContent = whitespace + textBefore +
+                            fsx.readFileSync(path.join(asm.src, fileName), 'utf8').split(/\r?\n/)
+                            .map((line, i) => {
+                                return (i > 0) ? whitespace + line : line
+                            }).join('\n');
+        content = content.replace(match, function () { return injectContent; })
+    }
+        
+    return content;
+};
 
 const buildAssembly = async (options, asm) => {
     if (asm.skipBuild) {
-        options.logger(1, 'assembly', chalk.keyword('orange')(asm.name), `${chalk.white(asm.dest.file)}`, getAssemblySize(asm.dest.file), chalk.keyword('limegreen')('✔'));
+        options.logger(1, 'assembly', chalk.keyword('orange')(asm.name), `${chalk.white(asm.dest.file)}`, getAssemblySize(asm.dest.file), chalk.keyword('limegreen')(' ✔ '));
         await addPreamble(options, asm);
     } else {
         // build assembly
@@ -197,7 +223,6 @@ const injectGlobals = async (options, asm) => { // globals
         let content = '',
             lintText = '';
         for(let global of asm.globals) { // { file: {}, name: '', desc: '', lint: t/f, content: '', filename: '' }
-
             // perform lint
             if (global.lint) { 
                 try { 
@@ -206,10 +231,10 @@ const injectGlobals = async (options, asm) => { // globals
                     lintText = err;
                 }
                 if (lintText) {
-                    options.logger(0, chalk.keyword('lightseagreen')(global.filename), '', '', '', chalk.red('lint: ✘'));
+                    options.logger(0, chalk.keyword('lightseagreen')(global.filename), '', '', '', chalk.red(' lint: ✘ '));
                     throw lintText;
                 } else {
-                    lintText = 'lint: ✔';
+                    lintText = ' lint: ✔ ';
                 }
             } else {
                 lintText = '';
@@ -245,10 +270,10 @@ const injectComponents = async (options, asm) => { // components
                     lintText = err;
                 }
                 if (lintText) {
-                    options.logger(0, chalk.keyword('lightseagreen')(comp.filename), '', '', comp.name, chalk.red('lint: ✘'));
+                    options.logger(0, chalk.keyword('lightseagreen')(comp.filename), '', '', comp.name, chalk.red(' lint: ✘ '));
                     throw lintText;
                 } else {
-                    lintText = 'lint: ✔';
+                    lintText = ' lint: ✔ ';
                 }
             } else {
                 lintText = '';
@@ -262,10 +287,8 @@ const injectComponents = async (options, asm) => { // components
             comp.type = result.type;
             if (!comp.type) { 
                 options.logger(0, chalk.keyword('lightseagreen')(comp.filename), '', '', comp.name, chalk.red('Unknown component type.'));
-                //throw `Unknown component type. Components can only be defined with: Component(), Annotation()`;
-                // TODO: uncomment above when Component itself is moved as Global
+                throw `Unknown component type. Components can only be defined with: Component(), Annotation()`;
             }
-
 
             // inject annotations
             if (!asm.profile.injections.exclude.components || !wildcards.isMatchAny(comp.name, asm.profile.injections.exclude.components)) {
@@ -312,10 +335,10 @@ const injectResources = async (options, asm) => { // resources
                     lintMinText = err;
                 }
                 if (lintMinText) {
-                    options.logger(0, chalk.keyword('lightseagreen')(res.filename), '', '', res.name, chalk.red('lint: ✘'));
+                    options.logger(0, chalk.keyword('lightseagreen')(res.filename), '', '', res.name, chalk.red(' lint: ✘ '));
                     throw lintMinText;
                 } else {
-                    lintMinText += 'lint: ✔';
+                    lintMinText += ' lint: ✔ ';
                 }
             } else {
                 lintMinText = '';
@@ -334,9 +357,9 @@ const injectResources = async (options, asm) => { // resources
                 try {
                     result = await minify.jsContent(options, fileContent);
                     fileContent = result.code;
-                    lintMinText += ' min: ✔'
+                    lintMinText += ' min: ✔ '
                 } catch (err) {
-                    options.logger(0, chalk.keyword('lightseagreen')(res.filename), '', '', res.name, chalk.keyword('limegreen')(lintMinText) + chalk.red(' min: ✘'));                    
+                    options.logger(0, chalk.keyword('lightseagreen')(res.filename), '', '', res.name, chalk.keyword('limegreen')(lintMinText) + chalk.red(' min: ✘ '));                    
                     throw err;
                 }
             }
@@ -375,10 +398,10 @@ const injectTypes = async (options, asm) => { // types, ado.ty
                     lintText = err;
                 }
                 if (lintText) {
-                    options.logger(0, chalk.keyword('lightseagreen')(type.filename), '', '', '', chalk.red('lint: ✘'));
+                    options.logger(0, chalk.keyword('lightseagreen')(type.filename), '', '', '', chalk.red(' lint: ✘ '));
                     throw lintText;
                 } else {
-                    lintText = 'lint: ✔';
+                    lintText = ' lint: ✔ ';
                 }
             } else {
                 lintText = '';
@@ -392,8 +415,7 @@ const injectTypes = async (options, asm) => { // types, ado.ty
             type.type = result.type;
             if (!type.type) { 
                 options.logger(0, chalk.keyword('lightseagreen')(type.filename), '', '', type.name, chalk.red('Unknown type of type.'));
-                //throw `Unknown type of type. Types can only be defined with: Class(), Struct(), Mixin(), Enum(), and Interface()`;
-                // TODO: uncomment above when files are moved correctly
+                throw `Unknown type of type. Types can only be defined with: Class(), Struct(), Mixin(), Enum(), and Interface()`;
             }            
 
             // inject annotations
@@ -437,7 +459,7 @@ const copyAssets = async (options, asm) => { // assets, namespaced-assets, libs,
         // copy all assets from src to dest
         for(let ast of asm.assets) { // { src: '', dest: '', skipCopy: t/f, lint: t/f, minify: t/f, gzip: t/f, gzDest: '', desc: '', name: '', file: {} }
             if (ast.skipCopy) {
-                options.logger(0, chalk.white(ast.name), '', '', '', chalk.keyword('limegreen')('✔'));
+                options.logger(0, chalk.white(ast.name), '', '', '', chalk.keyword('limegreen')(' ✔ '));
             } else {
                 // perform lint
                 if (ast.lint) { 
@@ -447,10 +469,10 @@ const copyAssets = async (options, asm) => { // assets, namespaced-assets, libs,
                         lintMinGzText = err;
                     }
                     if (lintMinGzText) {
-                        options.logger(0, chalk.green(ast.name), '', '', '', chalk.red('lint: ✘'));
+                        options.logger(0, chalk.green(ast.name), '', '', '', chalk.red(' lint: ✘ '));
                         throw lintMinGzText;
                     } else {
-                        lintMinGzText += 'lint: ✔';
+                        lintMinGzText += ' lint: ✔ ';
                     }
                 } else {
                     lintMinGzText = '';
@@ -464,9 +486,9 @@ const copyAssets = async (options, asm) => { // assets, namespaced-assets, libs,
                 if (ast.minify) {
                     try {
                         await minify.js(options, ast.src, ast.dest, ast.dest.replace(asm.dest.files));
-                        lintMinGzText += ' min: ✔'
+                        lintMinGzText += ' min: ✔ '
                     } catch (err) {
-                        options.logger(0, chalk.green(ast.name), '', '', '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' min: ✘'));
+                        options.logger(0, chalk.green(ast.name), '', '', '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' min: ✘ '));
                         throw err;
                     }
                 }
@@ -475,9 +497,9 @@ const copyAssets = async (options, asm) => { // assets, namespaced-assets, libs,
                 if (ast.gzip) { 
                     try {
                         await gzip.file(options, ast.dest, ast.gzDest);
-                        lintMinGzText += ' gz: ✔'
+                        lintMinGzText += ' gz: ✔ '
                     } catch (err) {
-                        options.logger(0, chalk.green(ast.name), '', '', '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' gz: ✘'));
+                        options.logger(0, chalk.green(ast.name), '', '', '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' gz: ✘ '));
                         throw err;
                     }
                 }
@@ -495,29 +517,42 @@ const writeAssembly = async (options, asm) => {
     // inject ado
     asm.content = replaceAll(asm.content, '<<ado>>', JSON.stringify(asm.ado));
 
+    // inject files, if defined
+    if (asm.files.injections) {
+        try {
+            let content = fsx.readFileSync(asm.files.injections, 'utf8').trim();
+            content = injectFiles(options, asm, content);
+            asm.content = replaceAll(asm.content, '<<injections>>', content);
+            lintMinGzText = ' inj: ✔ ';
+        } catch (err) {
+            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.red(' inj: ✘ '));
+            throw err;
+        }
+    } else {
+        asm.content = replaceAll(asm.content, '<<injections>>', '');
+    }
+
     // write assembly file
     fsx.writeFileSync(asm.dest.file, asm.content, 'utf8');
 
     // perform lint
     if (!asm.skipLint) { 
-        lintMinGzText = await lint.js(options, asm.dest.file);
-        if (lintMinGzText) {
-            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.red('lint: ✘'));
-            throw lintMinGzText;
+        let lintError = await lint.js(options, asm.dest.file);
+        if (lintError) {
+            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.red(' lint: ✘ '));
+            throw lintError;
         } else {
-            lintMinGzText += 'lint: ✔';
+            lintMinGzText += ' lint: ✔ ';
         }
-    } else {
-        lintMinGzText = '';
     }
 
     // perform minify
     if (!asm.skipMinify) { 
         try {
             await minify.js(options, asm.dest.file, asm.dest.minFile, asm.dest);
-            lintMinGzText += ' min: ✔'
+            lintMinGzText += ' min: ✔ '
         } catch (err) {
-            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' min: ✘'));
+            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' min: ✘ '));
             throw err;
         }
 
@@ -530,7 +565,7 @@ const writeAssembly = async (options, asm) => {
 
             // overwrite minified file with scrambled version
             fsx.writeFileSync(asm.dest.minFile, scrambledFileContent, 'utf8');
-            lintMinGzText += ' scr: ✔'
+            lintMinGzText += ' scr: ✔ '
         }
     }
 
@@ -538,9 +573,9 @@ const writeAssembly = async (options, asm) => {
     if (!asm.skipGzip) { 
         try {
             await gzip.file(options, (asm.dest.minFile || asm.dest.file), asm.dest.gzFile);
-            lintMinGzText += ' gz: ✔'
+            lintMinGzText += ' gz: ✔ '
         } catch (err) {
-            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' gz: ✘'));
+            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' gz: ✘ '));
             throw err;
         }
     }
@@ -555,9 +590,9 @@ const writeAssembly = async (options, asm) => {
     if (!asm.skipDocs) {
         try {
             await buildDocs.build(options, asm); 
-            lintMinGzText += ' docs: ✔'
+            lintMinGzText += ' docs: ✔ '
         } catch (err) {
-            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' docs: ✘'));
+            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' docs: ✘ '));
             throw err;
         }
     }
