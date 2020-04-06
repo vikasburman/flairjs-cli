@@ -8,6 +8,7 @@ const minify = require('./minify');
 const gzip = require('./gzip');
 const buildDocs = require('./build_docs');
 const runTasks = require('./run_tasks');
+const kinds = require('./kinds');
 
 // build assemblies and corrosponding docs
 module.exports = async function(options) { 
@@ -15,7 +16,7 @@ module.exports = async function(options) {
     options.logger(1, 'build'); 
     runTasks(options, 'pre', 'top');
 
-    // initialize docs builder
+    // start docs builder
     if (options.docs.perform) { await buildDocs.start(options); }
 
     for(let profileName of options.build.profiles.list) {
@@ -79,11 +80,17 @@ const findDefinitionOf = (likes, file, content) => {
     // required definitions to find
     // types: (Class)|(Struct)|(Mixin)|(Enum)|(Interface)
     // components: (Component)|(Annotation)
+    // globals: none of the above
     let rex = new RegExp(`(${likes})\\s*\\(\\s*()\\s*`, 'g');
+
+    const getKind = (type) => {
+        if (!kinds[type]) { throw `Unknown/unsupported type. (${type})`; }
+        return kinds[type];
+    };
 
     // find
     let result = {
-        type: '',               // found type: Class = class, Struct = struct, Component = component, etc.
+        type: '',               // found type: Class = getKind('class'), Struct = getKind('struct'), Component = getKind('component'), etc.
         index: -1,              // position where 'XXX(' starts
         lineStartIndex: -1      // posiiton where the line is started on which 'XXX(' is found
     };
@@ -101,7 +108,7 @@ const findDefinitionOf = (likes, file, content) => {
             } else { // record this
                 // record, if not already found
                 if (result.index === -1) {
-                    result.type = match[1].toLowerCase();
+                    result.type = getKind(match[1].toLowerCase());
                     result.index = match.index;
                     result.lineStartIndex = lineStartIndex;
                 } else {
@@ -164,6 +171,46 @@ const injectFiles = (options, asm, content) => { // <!-- inject: ./file -->
         
     return content;
 };
+const lintByType = async (options, file) => {
+    let result = null;
+    switch(file.ext) {
+        case 'js': result = await lint.js(options, file.file); break;
+        case 'html': result = await lint.html(options, file.file); break;
+        case 'css': result = await lint.css(options, file.file); break;
+        default: throw `Unknown file type for lint operation. (${file.file})`; break;
+    }
+    return result;
+};
+const minifyByType = async (options, type, content, src, dest, destRoot) => {
+    let result = null;
+    switch(type) {
+        case 'js': 
+            if (content) {
+                result = await minify.jsContent(options, content);
+            } else {
+                result = await minify.js(options, src, dest, destRoot);
+            }
+            break;
+        case 'html': 
+            if (content) {
+                result = await minify.htmlContent(options, content);
+            } else {
+                result = await minify.html(options, src, dest);
+            } 
+            break;
+        case 'css': 
+            if (content) {
+                result = await minify.cssContent(options, content);
+            } else {
+                result = await minify.css(options, src, dest);
+            } 
+            break;
+        default: 
+            throw `Unknown type for minify operation. (${type})`; 
+            break;
+    }
+    return result;
+};
 
 const buildAssembly = async (options, asm) => {
     if (asm.skipBuild) {
@@ -176,11 +223,13 @@ const buildAssembly = async (options, asm) => {
         runTasks(options, 'pre', 'asm', asm);
 
         await createAssembly(options, asm);  // main, config, settings
+        await injectIncludes(options, asm); // includes
         await injectGlobals(options, asm); // globals
         await injectComponents(options, asm); // components
         await injectResources(options, asm); // resources
         await injectTypes(options, asm); // types, ado.ty
         await copyAssets(options, asm); // assets, namespaced-assets, libs, locales
+        await injectADO(options, asm);  // ado
         await writeAssembly(options, asm);
         await addPreamble(options, asm);
 
@@ -213,8 +262,32 @@ const createAssembly = async (options, asm) => { // main, config, settings
         asm.content = replaceAll(asm.content, '<<config>>', JSON.stringify(getFileContent(asm.files.config, true))); 
         asm.content = replaceAll(asm.content, '<<settings>>', JSON.stringify(getFileContent(asm.files.settings, true)));
         if (asm.files.config) { options.logger(0, chalk.keyword('lightseagreen')(asm.files.config.replace(asm.folders.config, '.'))); }
-        if (asm.files.settings) { options.logger(0, chalk.keyword('lightseagreen')(asm.files.settings.replace(asm.folders.config, '.'))); }
+        if (asm.files.settings) { options.logger(0, chalk.keyword('lightseagreen')(asm.files.settings.replace(asm.folders.settings, '.'))); }
         options.logger(-1);
+    }
+};
+const injectADO = async(options, asm) => {
+    // inject ado
+    asm.content = replaceAll(asm.content, '<<ado>>', JSON.stringify(asm.ado));
+};
+const injectIncludes = async (options, asm) => { // includes
+    // inject includes files, if defined
+    if (asm.includes.length > 0) {
+        options.logger(1, chalk.keyword('tan')('includes'), asm.includes.length);
+        let content = '';
+        for(let inc of asm.includes) { // { file: {}, name: '', filename: '' }
+            // assemble content
+            content +=  `/\/\ #region name: ${inc.name}, file: ${inc.file.filename} (start)\n` +
+                        `${getFileContent(inc.file.file).trim()}\n` +
+                        `/\/\ #endregion name: ${inc.name}, file: ${inc.file.filename} (end)\n`;
+            options.logger(0, chalk.keyword('lightseagreen')(inc.filename, ''));
+        }
+
+        // inject
+        asm.content = replaceAll(asm.content, '<<includes>>', content);
+        options.logger(-1);
+    } else {
+        asm.content = replaceAll(asm.content, '<<includes>>', '');
     }
 };
 const injectGlobals = async (options, asm) => { // globals
@@ -226,7 +299,7 @@ const injectGlobals = async (options, asm) => { // globals
             // perform lint
             if (global.lint) { 
                 try { 
-                    lintText = await lint.js(options, global.file.file); 
+                    lintText = await lintByType(options, global.file);
                 } catch (err) {
                     lintText = err;
                 }
@@ -265,7 +338,7 @@ const injectComponents = async (options, asm) => { // components
             // perform lint
             if (comp.lint) { 
                 try {
-                    lintText = await lint.js(options, comp.file.file); 
+                    lintText = await lintByType(options, comp.file);
                 } catch (err) {
                     lintText = err;
                 }
@@ -330,7 +403,7 @@ const injectResources = async (options, asm) => { // resources
             // perform lint
             if (res.lint) { 
                 try {
-                    lintMinText = await lint.js(options, res.file.file);
+                    lintMinText = await lintByType(options, res.file);
                 } catch(err) {
                     lintMinText = err;
                 }
@@ -355,7 +428,7 @@ const injectResources = async (options, asm) => { // resources
             // perform minify
             if (res.minify) {
                 try {
-                    result = await minify.jsContent(options, fileContent);
+                    result = await minifyByType(options, res.file.ext, fileContent);
                     fileContent = result.code;
                     lintMinText += ' min: ✔ '
                 } catch (err) {
@@ -393,7 +466,7 @@ const injectTypes = async (options, asm) => { // types, ado.ty
             // perform lint
             if (type.lint) { 
                 try {
-                    lintText = await lint.js(options, type.file.file); 
+                    lintText = await lintByType(options, type.file);
                 } catch (err) {
                     lintText = err;
                 }
@@ -464,7 +537,7 @@ const copyAssets = async (options, asm) => { // assets, namespaced-assets, libs,
                 // perform lint
                 if (ast.lint) { 
                     try {
-                        lintMinGzText = await lint.js(options, ast.src);
+                        lintMinGzText = await lintByType(options, ast.file);
                     } catch (err) {
                         lintMinGzText = err;
                     }
@@ -485,7 +558,7 @@ const copyAssets = async (options, asm) => { // assets, namespaced-assets, libs,
                 // perform minify
                 if (ast.minify) {
                     try {
-                        await minify.js(options, ast.src, ast.dest, ast.dest.replace(asm.dest.files));
+                        await minifyByType(options, ast.file.ext, '', ast.src, ast.dest, ast.dest.replace(asm.dest.files));
                         lintMinGzText += ' min: ✔ '
                     } catch (err) {
                         options.logger(0, chalk.green(ast.name), '', '', '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' min: ✘ '));
@@ -513,24 +586,6 @@ const copyAssets = async (options, asm) => { // assets, namespaced-assets, libs,
 };
 const writeAssembly = async (options, asm) => {
     let lintMinGzText = '';
-
-    // inject ado
-    asm.content = replaceAll(asm.content, '<<ado>>', JSON.stringify(asm.ado));
-
-    // inject files, if defined
-    if (asm.files.injections) {
-        try {
-            let content = fsx.readFileSync(asm.files.injections, 'utf8').trim();
-            content = injectFiles(options, asm, content);
-            asm.content = replaceAll(asm.content, '<<injections>>', content);
-            lintMinGzText = ' inj: ✔ ';
-        } catch (err) {
-            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.red(' inj: ✘ '));
-            throw err;
-        }
-    } else {
-        asm.content = replaceAll(asm.content, '<<injections>>', '');
-    }
 
     // write assembly file
     fsx.writeFileSync(asm.dest.file, asm.content, 'utf8');

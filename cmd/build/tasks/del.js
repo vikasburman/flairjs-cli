@@ -1,16 +1,14 @@
-const path = require('path');
 const fsx = require('fs-extra');
 const del = require('del');
-const pathJoin = require('../../shared/modules/path_join');
 
 // delete files/folders as per given config
 // config: {
-//      path: ''
+//      dest: ''
 //      exclude: []
 //      skipOnQuick: false
 //      skipOnFull: false
 //  }
-//  path: 'path'        <-- (mandatory) depending upon the current level, it will resolve it based on the root path of that level 'at dest'
+//  dest: 'path'        <-- (mandatory) depending upon the current level, it will resolve it based on the root path of that level 'at dest'
 //                      level: ''           ./  = source root       ./dest                                  
 //                      level: profile      ../ = source root       ./dest                                  
 //                      level: profile      ./  = profile root      ./dest/<profile>                        
@@ -27,60 +25,30 @@ const pathJoin = require('../../shared/modules/path_join');
 //  skipOnQuick: t/f    if task to be skipped when running a quick build <-- this is checked in run_tasks itself
 //  skipOnFull: t/f     if task to be skipped when running a full build  <-- this is checked in run_tasks itself
 module.exports = async function(taskConfig) {
-    if (!taskConfig.path) { throw `Delete path must be defined. (${taskConfig.level}, ${taskConfig.mode})`; }
+    if (!taskConfig.dest) { throw `Delete path must be defined. (${taskConfig.level}, ${taskConfig.mode})`; }
 
     // read config
-    let pth = taskConfig.path, 
-        level = taskConfig.current.level,
+    let level = taskConfig.current.level,
         mode =  taskConfig.current.mode,
         options = taskConfig.current.options,
         profile = taskConfig.current.profile,
         group = taskConfig.current.group,
         asm = taskConfig.current.asm;
-    switch(level) {
-        case '':
-            if (pth.startsWith('../')) { // project root
-                pth = pth.substr(1); // make ../ -> ./
-                if (pth === './' ) { throw `Project root cannot be deleted. (${level}, ${mode})`; } // just project root itself 
-                if (pth.startsWith(options.src)) { throw `Any source folder cannot be deleted. (${level}, ${mode})`; } // any source folder
-            } else if(pth.startsWith('./')) { // source root @ dest
-                pth = pathJoin(options.dest, pth);
-            }
-            break;
-        case 'profile':
-            if (pth.startsWith('../')) { // source root @ dest
-                pth = pathJoin(options.dest, pth.substr(1));
-            } else if(pth.startsWith('./')) { // profile root @ dest
-                pth = pathJoin(profile.dest, pth);
-            }
-            break;
-        case 'group':
-            if (pth.startsWith('../')) { // profile root @ dest
-                pth = pathJoin(profile.dest, pth.substr(1));
-            } else if(pth.startsWith('./')) { // group root @ dest
-                pth = pathJoin(group.dest, pth);
-            }
-            break;
-        case 'asm':
-            if (pth.startsWith('../')) { // group root @ dest
-                pth = pathJoin(group.dest, pth.substr(1));
-            } else if(pth.startsWith('./')) { // asm root @ dest
-                pth = pathJoin(asm.dest.files, pth);
-            }
-            break;
-    }
+
+    // resolve paths (use destination path, never delete anything in source folder)
+    let { dest } = taskConfig.path(taskConfig.dest || '');
 
     // delete file/folder
-    if (fsx.existsSync(pth)) { 
-        if (fsx.lstatSync(src).isDirectory()) { // folder
+    if (fsx.existsSync(dest)) { 
+        if (fsx.lstatSync(dest).isDirectory()) { // folder
             if (taskConfig.exclude && taskConfig.exclude.length > 0) { // check for exclusions
-                del.sync([pth, ...taskConfig.exclude]); // NOTE: exclude patterns must start with '!' to be exclusions
+                del.sync([dest, ...taskConfig.exclude]); // NOTE: exclude patterns must start with '!' to be exclusions
             } else { // no filters
-                del.sync([pth]); 
+                del.sync([dest]); 
             }            
         } else { // file
-            fsx.unlinkSync(pth);
+            fsx.unlinkSync(dest);
         }
     } 
-    options.logger(0, chalk.green(pth), '', '', '', chalk.keyword('limegreen')('✔'));
+    options.logger(0, chalk.green(taskConfig.dest), '', '', '', chalk.keyword('limegreen')('✔'));
 };

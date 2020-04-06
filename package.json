@@ -41,7 +41,7 @@
         "junk": "^3.1.0",
         "matcher": "^2.1.0",
         "minimist": "^1.2.0",
-        "minisearch": "^2.1.4",
+        "minisearch": "^2.2.1",
         "open": "^7.0.2",
         "path-sort": "^0.1.0",
         "recursive-readdir-sync": "^1.0.6",

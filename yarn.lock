@@ -2031,10 +2031,10 @@ minimist@^1.2.0, minimist@^1.2.5:
   resolved "https://registry.yarnpkg.com/minimist/-/minimist-1.2.5.tgz#67d66014b66a6a8aaa0c083c5fd58df4e4e97602"
   integrity sha512-FM9nNUYrRBAELZQT3xeZQ7fmMOBg6nWNmJKTcgsJeaLstP/UODVpGsr5OhXhhXg6f+qtJ8uiZ+PUxkDWcgIXLw==
 
-minisearch@^2.1.4:
-  version "2.1.4"
-  resolved "https://registry.yarnpkg.com/minisearch/-/minisearch-2.1.4.tgz#e37265a5d7f2ebd855f5b1380bfe5376f90ce5be"
-  integrity sha512-1ZIgT5FwukQm+v4In6uUz3RZRS/7jJpFagxRl+jqveYZfg1b14M9RILXKrFededF642mIWlMTbuZvZHui4oW+A==
+minisearch@^2.2.1:
+  version "2.2.1"
+  resolved "https://registry.yarnpkg.com/minisearch/-/minisearch-2.2.1.tgz#a51255e0557d154a75b3b4dac22468285711f47d"
+  integrity sha512-0vB+h9AcL2QApQti3C8NifyF6qLV8UGOrngDO10w5DBDBUdUuWUxOym85B5iAJWq1pdlI/ym/+7QJoH69i/o/Q==
 
 mkdirp@^0.5.1:
   version "0.5.4"

@@ -48,53 +48,15 @@ module.exports = async function(taskConfig) {
     if (!taskConfig.src) { throw `Copy source must be defined. (${taskConfig.level}, ${taskConfig.mode})`; }
 
     // read config
-    let src = '', 
-        dest = '',
-        level = taskConfig.current.level,
+    let level = taskConfig.current.level,
         mode =  taskConfig.current.mode,
         options = taskConfig.current.options,
         profile = taskConfig.current.profile,
         group = taskConfig.current.group,
-        asm = taskConfig.current.asm,
-        dest = taskConfig.dest || '';
-    switch(level) {
-        case '':
-            if (src.startsWith('../')) { // project root
-                src = src.substr(1); // make ../ -> ./
-                dest = pathJoin('./', dest);
-            } else if(src.startsWith('./')) { // source root
-                src = pathJoin(options.src, src);
-                dest = pathJoin(options.dest, src);
-            }
-            break;
-        case 'profile':
-            if (src.startsWith('../')) { // source root
-                src = pathJoin(options.src, src.substr(1));
-                dest = pathJoin(options.dest, dest || src.substr(1));
-            } else if(src.startsWith('./')) { // profile root
-                src = pathJoin(profile.src, src);
-                dest = pathJoin(profile.dest, dest || src);
-            }
-            break;
-        case 'group':
-            if (src.startsWith('../')) { // profile root
-                src = pathJoin(profile.src, src.substr(1));
-                dest = pathJoin(profile.dest, dest || src.substr(1));
-            } else if(src.startsWith('./')) { // group root
-                src = pathJoin(group.src, src);
-                dest = pathJoin(group.dest, dest || src);
-            }
-            break;
-        case 'asm':
-            if (src.startsWith('../')) { // group root
-                src = pathJoin(group.src, src.substr(1));
-                dest = pathJoin(group.dest, dest || src.substr(1));
-            } else if(src.startsWith('./')) { // asm root
-                src = pathJoin(asm.src, src);
-                dest = pathJoin(asm.dest.files, dest || src);
-            }
-            break;
-    }
+        asm = taskConfig.current.asm;
+
+    // resolve paths
+    let { src, dest } = taskConfig.path(taskConfig.src || '', taskConfig.dest || '');
 
     // copy file/folder
     if (fsx.lstatSync(src).isDirectory()) { // folder
@@ -124,5 +86,5 @@ module.exports = async function(taskConfig) {
         fsx.ensureDirSync(path.dirname(dest));
         fsx.copyFileSync(src, dest);
     }
-    options.logger(0, chalk.green(dest), '', '', '', chalk.keyword('limegreen')('✔'));
+    options.logger(0, chalk.green(taskConfig.src), '', '', '', chalk.keyword('limegreen')('✔'));
 };

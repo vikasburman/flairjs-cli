@@ -47,7 +47,7 @@ const doTask = (argv, done) => {
 
     // run build session
     flairBuild(options).catch((err) => {
-        options.logger(0, chalk.redBright('ABORT: ' + err) + chalk.gray('\n' + err.stack));
+        options.logger(0, chalk.redBright('ABORT: ' + err + (err.line ? `\nfile: ${err.filename}\nline: ${err.line}\ncol: ${err.col}` : '')) + chalk.gray('\n' + err.stack));
     }).finally(done);
 };
 

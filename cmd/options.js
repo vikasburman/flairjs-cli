@@ -114,8 +114,48 @@ module.exports = {
         minify: true,
         
         // perform gzip for minidifed asset files of supported types
-        gzip: true
+        gzip: true,
+
+        // file types that should automatically be identified as assets 
+        // and move to assets folder during build
+        // only files inside 'types' folder are considered for this
+        ext: ['txt', 'xml', 'md', 'json', 'css', 'html', 'svg', 'png', 'jpeg', 'gif', 'jpg', 'tiff', 'bmp']
     },    
+
+    // localization
+    l10n: {
+        // localized source replica files
+        // underneath this folder should exists locale specific folder to keep same name source files under all supported locales
+        // folder names should match the names defined in locales array below
+        src: './l10n',
+
+        // master list of all locales that has every been supported on any packages that are published together
+        // the name of these should match to codes define at: https://www.metamodpro.com/browser-language-codes
+        locales: {
+            en: { title: 'English', display: 'English' },
+            fr: { title: 'French', display: 'Française' },
+            de: { title: 'German', display: 'Deutsche' },
+            zh: { title: 'Chinese', display: '中文' },
+            ja: { title: 'Japanese', display: '日本人' },
+            ko: { title: 'Korean', display: '한국어' },
+            hi: { title: 'Hindi', display: 'हिन्दी' },
+            ar: { title: 'Arabic', display: 'عربى', rtl: true },
+            es: { title: 'Spanish', display: 'Española' },
+            no: { title: 'Norwegian', display: 'norsk' },
+            ru: { title: 'Russian', display: 'русский' }
+        },
+
+        // supported locales for current version
+        current: ['en', 'fr'],
+
+        // default locale in which original 
+        // source files/documentation is written
+        default: 'en',
+
+        // if a copy of default locale files should be used
+        // for all missing locale files in a non-default locale
+        copyDefault: true
+    },
 
     // build opetation configuration
     build: {
@@ -124,7 +164,7 @@ module.exports = {
 
         // exclude these special folders at source root
         // if assemmblies are being picked from source root
-        exclude: ['guides', 'tests', 'examples', 'docs'],
+        exclude: ['tests', 'docs'],
 
         // destination, where generated files will be placed
         dest: './dist',
@@ -169,58 +209,45 @@ module.exports = {
             files: {
                 // assembly's custom initializer file name,
                 // when not present (recommended not to include) it picks the default template
-                main: 'index.js',
-
-                // assembly's file injections list
-                // if any files need to be injected inside assembly in a seperate closure, these can be defined
-                // in this file at assembly root folder, where each injection can be defined as:
-                // <!-- inject: ./relative/file/path/from/asm/root/fileName.js -->
-                // any number of such injections can be defined
-                // injections are done, even before globals are added, so anything that these injected files load
-                // can be referred in globals as well
-                // no lint is executed on these injected files, however minification do happen, as min is 
-                // done on whole assembly file
-                injections: 'injections.js',
+                main: './index.js',
 
                 // a json file which gets embedded in assembly and
                 // all of the content is available in assembly closure as 'settings' object
                 // values of this object cannot be changed at runtime
-                settings: 'settings.json',
+                settings: './settings.json',
 
                 // a json file which gets embedded in assembly and
                 // all of the content is available in assembly closure as 'config' object
                 // values of this object are merged with values defined in './appConfig.json' or './webConfig.json'
                 // file at runtime once at assembly load, and thereafter this object cannot be changed
-                config: 'config.json',
+                config: './config.json',
 
-                // info file for every member type (where documentation does not exists in code)
-                docsinfo: 'docs.info',
-
-                // info file for every namespace (must exists at root folder of the namespace)
-                nsinfo: 'ns.info'
+                // a json file which gets embedded in preamble to define all available routes
+                 // format: [{ name, mount, handler, verbs, mw, index, desc }, ...]
+                routes: './routes.json'
             },
 
             // all special purpose folders
             folders: {
                 // assets folder can exists at the root of the assembly
-                // files places in this special folder are copied to assembly's connected files folder after doing asset specfic processing like minify, gzip etc.
-                // ./src/asm/assets/* -> ./dest/asm/*
-                assets: 'assets',
+                // files places in this special folder are copied to assembly's connected files folder after doing asset 
+                // specfic processing like minify, gzip etc.
+                // ./src/asm/assets/* -> ./dest/asm_files/*
+                // 
+                // Automatically identified assets are also copied in assets folder as per the context (generally the namespace)
+                assets: './assets',
+
+                // locales folder can exists at the assembly root folder only 
+                // files places in this special folder are copied to assembly's connected files folder as is, without any processing
+                // localized versions for each file can exists in ./l10n/<localeId>/asm/l10n/* files for corrosponding localeId
+                // ./src/asm/assets/l10n/* -> ./dest/asm_files/l10n/<localeId>/*
+                l10n: './l10n',                
 
                 // libs folder can exists at the assembly root folder only
                 // files places in this special folder are copied to assembly's connected files folder as is, without any processing
                 // this is suited for 3rd-party files, which are to be accoompained by the assembly
-                // ./src/asm/libs/* -> ./dest/asm/libs/*
-                libs: 'libs',
-
-                // locales folder can exists at the assembly root folder only
-                // files places in this special folder are copied to assembly's connected files folder as is, without any processing
-                // underneath this folder should exists locale specific folder to keep same name files under all supported locales
-                // the name of these sub-folders should match to codes define at: https://www.metamodpro.com/browser-language-codes
-                // under each of these locale folders any number of json files can ke placed with { key: value } structure to have
-                // string-key with localized-value translsation for the corrosponding locale where this file is placed
-                // ./src/asm/locales/* -> ./dest/asm/locales/*
-                locales: 'locales',
+                // ./src/asm/assets/libs/* -> ./dest/asm_files/libs/*
+                libs: './libs',
 
                 // resources folder can exists at the assembly root folder only
                 // files places in this special folder are bundled as embedded resources in the assembly and resources are available
@@ -228,39 +255,29 @@ module.exports = {
                 // files can be arranged in any structure here, and the path/filename.ext becomes the id of the file to pass to getResource
                 // ./src/asm/resources/* -> getResource(*)
                 // ./src/asm/resources/a/b/c/d.json -> getResource('a/b/c/d.json');
-                resources: 'resources',
+                resources: './resources',
 
-                // routes folder can exists at the assembly root folder only
-                // routes.json format files places in this special folder are read, flatten as one list, order by index and 
-                // added in preamble for routes definition ahead of loading of actual assembly
-                // any number of json files in any folder structure can exists, however all should be in a specific 
-                // format: [{ name, mount, handler, verbs, mw, index, desc }, ...]
-                routes: 'routes',
+                // includes folder can exists at the root of the assembly
+                // files placed in this special folder can be bundled in the assembly as-is in the main closure
+                // files can be placed in any structure underneath, the order is identified in overall list of all files in here
+                // the order of files to be added can be defined the way types are ordered (#N).file.js and (#-N).file.js
+                // only js files are included, error throw for otehr extensions
+                // ./src/asm/includes/* -> asm.js
+                includes: './includes',
 
                 // globals folder can exists at the assembly root folder only
                 // .js files placed in this special folder are bundled as is, in assembly's main closure and these constructs
                 // will be available to all components and types that gets bundled in assembly
                 // note: these globals are assembly level globals and not generic globals
-                globals: 'globals',
+                globals: './globals',
                 
-                // config folder can exists at the assembly root folder only
-                // this is a place where various types of known configuration files are placed
-                // e.g., config.json,           server-config.json,         client-config.json, 
-                //       worker-config.json,    server-worker-config.json,  client-worker-config.json
-                config: 'config',
-
-                // settings folder can exists at the assembly root folder only
-                // this is a place where settings.json file is kept.
-                // settings are design-time configuration that does not change at runtime
-                settings: 'settings',                
-
                 // components folder can exists at the assembly root folder only
                 // files placed in this special folder are bundled as components inside the
                 // assembly. 
                 // there can be any folder structure underneath, but all files in any folder
                 // are processed as one single list
                 // ./src/asm/components/* -> ./dest/asm.js
-                components: 'components',
+                components: './components',
 
                 // types folder can exists at the assembly root folder only
                 // folders directly under this folder are all treated as namespaces 
@@ -269,23 +286,15 @@ module.exports = {
                 // under the namespace folder name, there can be any structure of folders, and they all will be treated 
                 // under same namespace
                 // this way, the published structure (namespaces) can be different that local structure (the folders inside namesapce)
-                types: 'types',                
+                types: './types',
 
-                // tests folder can exists at the assembly root folder only
-                // this is a place where all multi-member test specs for this assembly can be placed
-                // only those tests which are in docs.info file here, will go into documentation
-                // while all specs will still be run by test engine irrespective of its link in docs.info
-                // all other member-specific tests should be written in same name .spec.js file
-                tests: 'tests',
-
-                // examples folder can exists at the assembly root folder only
-                // this is a place where all multi-member example links for this assembly can be placed in docs.info file here
-                // all other member-specific examples should be written in @fiddle 
-                examples: 'examples', 
-
-                // guides folder can exists at the assembly root folder only
-                // this is a place where all assembly specifc guides can be placed in .md files with their links in docs.info file here
-                guides: 'guides'                 
+                // assembly docs are kept here
+                // these files are not copied anywhere
+                docs: './docs',    
+                
+                // assembly high-level tests specs are kept here
+                // these files are not copied anywhere
+                tests: './tests'        
             },
 
             // these folders, files and extension are skipped from normal iteration process
@@ -454,7 +463,6 @@ module.exports = {
         //     { mode: 'pre'/'post', level: '(empty)/profile/group/asm', options, profile, group, asm}
         //     
         tasks: {
-
             // copy files from src to dest
             copy: {
                 module: 'copy',
@@ -476,6 +484,54 @@ module.exports = {
                     exclude: [],
                     skipOnQuick: false,
                     skipOnFull: false                    
+                }
+            },
+// TODO:
+            // create bundle of files in src, at dest folder
+            bundle: {
+                module: 'bundle',
+                config: {
+
+                }
+            },
+
+            // minify files in dest folder
+            minify: {
+                module: 'minify',
+                config: {
+
+                }
+            },
+
+            // download git repo files to given folder
+            download: {
+                module: 'download',
+                config: {
+
+                }
+            },
+
+            // install node_modules in dest folder
+            install: {
+                module: 'install',
+                config: {
+
+                }
+            },
+
+            // copy modules from src/node_modules to given dest folder
+            modules: {
+                module: 'modules',
+                config: {
+
+                }
+            },
+
+            // flag the build in dest folder
+            flag: {
+                module: 'flag',
+                config: {
+
                 }
             }
         },
@@ -663,9 +719,26 @@ module.exports = {
         // master switch for docs generation
         perform: true,
 
-        // master switch to build search data
+        l10n: {
+            // supported locales for documentation of current version
+            // these locales which are added here must also be adeed in master l10n.current list
+            current: ['en'],
+
+            // if a copy of default locale docs should be used
+            // for all missing documentation in a non-default locale
+            copyDefault: false,
+        },
+
         search: {
-            build: true
+            // master switch to build search data
+            build: true,
+
+            // depth control
+            // 0: name, desc
+            // 1: name, desc, remarks
+            // 2: name, desc, remarks, members (name, desc, remarks)
+            // 3: name, desc, remarks, examples, members (name, desc, remarks, examples)
+            depth: 1
         },
 
         // fiddle example configuration
@@ -701,65 +774,71 @@ module.exports = {
         //   js files to load (defined in index.json)
         //   css files to load (defined in index.json)
         // templates (./html/*.html) - all optional:
-        //   header, footer
-        //   assembly
-        //   globals, global
-        //   components, component, annotation
-        //   namespaces, namespace, types
-        //   class, interface, struct, mixin, enum
-        //   const, prop, event, func
-        //   config, config-item
-        //   settings, settings-item
-        //   resources, resources-item
-        //   routes, routes-item
-        //   assets, assets-item
-        //   locales, locales-item
-        //   libs, libs-item
-        //   examples, examples-item
-        //   guides, guides-item
-        //   tests, tests-item
+        //   header, footer, home, sidebar, highlights, content
+        //   home, 404, search
         // any missing file in custom theme will be picked from default theme
         // default theme will always be overwritten with 
-        // default theme
-        //
-        // NOTE: at each collection (package) level, following files can be placed in ./src/docs folder
-        // and they will be processed over and above theme files
-        //  ./index.json -- to load custom js and css at package level
-        //  ./html/index.html -- to serve as package/collection specific home
-        //  ./html/header.html -- to server as package/collection specific header
-        //  ./html/footer.html -- to server as package/collection specific footer
-        // with this way, without making a custom theme, still custom home can be provided for the package
-        theme: '',
+        // inbuilt default theme
+        theme: 'default',
+
+        // favicon path (in context of docs root)
+        favicon: 'favicon.png',
+
+        // logo path (in context of docs root)
+        // logo should be of 512x512
+        logo: './themes/default/images/logo.png',
+
+        // google analytics id for tracking (if required)
+        ga: '',
 
         // in a multi-project scenario, where docs need to be served from one place as collection
         // there must be one main repo which has this definition setup, and all
         // this also needs to write some post-build commands to download/copy docs
         // from other repos at right place
-        // e.g., { name: 'flairjs', title: 'Flair.js' }
-        packages: [],
-
-        versions: {
-            // all available versions to show on the ui
-            // e.g., { name: 'v1', title: '1.x' }
+        packages: {
+            // data related to all packages that are being hosted together
+            // complete info of all packages should be defined
+            // and files for other versions should be copied at publish location
+            // at final merge location
+            // { 
+            //      // package titles will be read from 
+            //      // string.json at: packages: { <name>: "" }
+            //      name: 'flairjs', 
+            //      versions: {
+            //          // data related to all available versions of this package should be defined here
+            //          // {
+            //          //      name: 'v1',
+            //          //      title: '1.x,
+            //          //      locales: {
+            //          //          //  locale id of all available locales should be defined here
+            //          //          //  'en', 'fr', etc.  
+            //          //          list: [],
+            //          //          
+            //          //          // default locale for this version
+            //          //          default: ''
+            //          //      }
+            //          // }
+            //          list: [],
+            //              
+            //          // default version name for this package
+            //          default: ''
+            //      } 
+            //  }
             list: [],
 
-            // current version details
-            current: {
-                // to be picked by default 
-                name: 'v1',
+            // default package name, that should be loaded initially
+            // if not defined, it will pick current package name
+            default: ''
+        },
 
-                // version specific available locales
-                locales: {
-                    // all available locales for this version to show on the ui
-                    //  e.g., { name: 'en', title: 'English' }
-                    // NOTE: currently only english language is supported, as no translation or alternative
-                    // approach is defined. However for UI sake, this process exists                    
-                    list: [], 
-                    
-                    // default locale of current version
-                    current: 'en'
-                }
-            }
+        versions: {
+            // current version name
+            // all historical versions should be defined under 'packages' above
+            current: { name: 'v1', title: '1.x' },
+
+            // default version that should be loaded initially
+            // if not defined, it will pick the current version
+            default: ''
         },
 
         // wildcards for assembly names for which documentation is not to be processed

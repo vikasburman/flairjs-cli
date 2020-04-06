@@ -57,8 +57,8 @@ exports.cssContent = async (options, content) => {
 };
 exports.css = async (options, src, dest) => {
     return new Promise((resolve, reject) => {   
-        let content = fsx.readFileSync(src, 'utf8'),
-            dest = dest.replace('.css', '.min.css');
+        dest = dest.replace('.css', '.min.css');
+        let content = fsx.readFileSync(src, 'utf8');
         exports.cssContent(options, content).then((styles) => {
             fsx.writeFileSync(dest, styles, 'utf8');
             resolve(''); 
@@ -79,8 +79,8 @@ exports.htmlContent = async (options, content) => {
 };
 exports.html = async (options, src, dest) => { 
     return new Promise((resolve, reject) => { // eslint-disable-line no-unused-vars           
-        let content = fsx.readFileSync(src, 'utf8'),
-            dest = dest.replace('.html', '.min.html');
+        dest = dest.replace('.html', '.min.html');
+        let content = fsx.readFileSync(src, 'utf8');
         exports.htmlContent(options, content).then((result) => {
             fsx.writeFileSync(dest, result, 'utf8');
             resolve('');

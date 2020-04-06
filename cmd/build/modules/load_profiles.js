@@ -51,6 +51,66 @@ module.exports = async function(options) {
     options.logger(-1);
 };
 
+/** 
+ * Details structure of a project looks like:
+ * <project>\                                                   project root folder (.\)
+ * .\.vscode                                                    [fixed] vscode configuration
+ * .\debug                                                      [fixed] debug support files
+ * .\dist                                                       [configurable] distribution files
+ * .\docs                                                       [configurable] docs distribution files
+ * .\node_modules                                               [fixed] node modules
+ * .\packages                                                   [configurable] package distribution files
+ * .\temp                                                       [configurable] temporary build / cache files
+ * .\test                                                       [configurable] test engine files
+ * .\flair.json                                                 [fixed] project configuration
+ * .\package.json                                               [fixed] package configuration
+ * .\src                                                        [configurable] source files
+ * .\src\docs\package.info                                      [fixed, optional] package level docs (just header)
+ * .\src\docs\examples.info                                     [fixed, optional] package level fiddle examples catalog (header + items)
+ * .\src\docs\guides.info                                       [fixed, optional] package level guides catalog (header + items)
+ * .\src\docs\guides\*\*.md                                     [fixed, optional] package level guide documentation
+ * .\src\docs\pages.info                                        [fixed, optional] package level pages catalog (header + items)
+ * .\src\docs\pages\*\*.html                                    [fixed, optional] package level raw html pages and supporting files
+ * .\src\docs\themes\*\*                                        [fixed, optional] package level theme definition
+ * .\src\<profile>                                              [optional] profile root folder
+ * .\src\<profile>\<group>                                      [optional] profile's group folder
+ * .\src\<profile>\<group>\<asm>                                [fixed] assembly folder
+ * .\src\..\<asm>\index.js                                      [fixed, optional] custom index.js for assembly binding
+ * .\src\..\<asm>\routes.json                                   [fixed, optional] route handler definitions for the assembly
+ * .\src\..\<asm>\config.json                                   [fixed, optional] assembly default configuration, that can be changed from appConfig/webConfig file
+ * .\src\..\<asm>\settings.json                                 [fixed, optional] assembly default configuration, that can not be changed from outside
+ * .\src\..\<asm>\assets\*                                      [fixed, optional] assets that are copied to <asm>_files folder on build, all localized asset files are copied to <asm>_files/<locale>/* 
+ * .\src\..\<asm>\assets\l10n\*                                 [fixed, optional] localized assets can be kept here for default locale, copied to <asm_files>/<locale>/ [ for other locales, same structure can be placed in ./l10n/<localeId>/../asm/assets/l10n/* ]
+ * .\src\..\<asm>\libs\*                                        [fixed, optional] 3rd party libraries that remain untouched during build processing and copied to <asm>_files/libs/
+ * .\src\..\<asm>\resources\*                                   [fixed, optional] resources that gets bundled inside assembly
+ * .\src\..\<asm>\tests\*\*.spec                                [fixed, optional] high level multi-item test specifications
+ * .\src\..\<asm>\globals\*\*.js                                [fixed, optional] assembly global closure code elements
+ * .\src\..\<asm>\globals\*\*.spec.js                           [fixed, optional] assembly global closure code elements's test specs
+ * .\src\..\<asm>\components\*\*.js                             [fixed, optional] assembly components code
+ * .\src\..\<asm>\components\*\*.spec.js                        [fixed, optional] assembly components test specs
+ * .\src\..\<asm>\types\<ns>\*\*.js                             [fixed, optional] namespaced types code
+ * .\src\..\<asm>\types\<ns>\*\*.spec.js                        [fixed, optional] namespaced types test specs
+ * .\src\..\<asm>\docs\assembly.info                            [fixed, optional] assembly level docs (just header)
+ * .\src\..\<asm>\docs\globals.info                             [fixed, optional] assembly globals docs (just header)
+ * .\src\..\<asm>\docs\components.info                          [fixed, optional] assembly components docs (just header)
+ * .\src\..\<asm>\docs\namespaces.info                          [fixed, optional] assembly namespaces docs (header + items)
+ * .\src\..\<asm>\docs\types.info                               [fixed, optional] assembly types docs (just header)
+ * .\src\..\<asm>\docs\assets.info                              [fixed, optional] assets's docs (header + items)
+ * .\src\..\<asm>\docs\libs.info                                [fixed, optional] libs's docs (header + items)
+ * .\src\..\<asm>\docs\resources.info                           [fixed, optional] resources's docs (header + items)
+ * .\src\..\<asm>\docs\routes.info                              [fixed, optional] routes's docs (header + items)
+ * .\src\..\<asm>\docs\config.info                              [fixed, optional] assembly configuration docs (header + items)
+ * .\src\..\<asm>\docs\settings.info                            [fixed, optional] assembly settings docs (header + items)
+ * .\l10n\<locale>\*                                            entire structure here is a replica of all files as in .src/
+ *                                                              for each locale. 
+ *                                                              All code files can exists without actual code but only with 
+ *                                                              documentation blocks.
+ *                                                              All locales speific asset files can be placed at the same level
+ *                                                              and place as they exists in main .src/ folder
+ *                                                              All corrosponding *.info, can exists for each locale
+ *                                                              at the same place, as in main .src/ folder
+*/ 
+
 const getFiles = (asmName, root, exclude, changedSince) => {
     let set = {
         changed: false,
@@ -73,7 +133,7 @@ const getFiles = (asmName, root, exclude, changedSince) => {
             basename: path.basename(f),                     // abc.js / abc.min.js / abc.json 
             ext: path.extname(f).substr(1), // remove .     // js | json
             index: 0,                                       // -99 / 0
-            isAsset: false,                                 // true, if starts with (@).
+            isAsset: false,                                 // true, if starts with '(@).' OR if kept inside 'types' folder and ext matches as listed in options.assets.ext
             isNamespaced: false,                            // true, if file is a namespaced file 
             nsName: '',                                     // empty for root namesapace, else name
             nsPath: ''                                      // namespace path
@@ -185,14 +245,6 @@ const sortFiles = (files) => {
 const getPathIfExists = (rootpath, path) => {
     if (rootpath) { path = pathJoin(rootpath, path); }
     return fsx.existsSync(path) ? path : '';
-};
-const getFileInfo = (file) => { // TODO: to remove
-    let infoFile = file + '.info',
-        info = '';
-    if (fsx.existsSync(infoFile)) {
-        info = fsx.readFileSync(infoFile, 'utf8').trim();
-    }
-    return info;
 };
 const getMextFile = (filename) => {
     let ext = path.extname(filename);
@@ -418,20 +470,19 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
     //          main: '',
     //          config: '',
     //          settings: '',
-    //          injections: ''
+    //          routes: ''
     //     },
     //     folders: {
     //          assets: '',
-    //          components: '',
-    //          config: '',
-    //          docs: '',
-    //          globals: '',
-    //          routes: '',
+    //          l10n: '',
     //          libs: '',
-    //          locales: '',
     //          resources: '',
-    //          tests: '',
-    //          types: ''
+    //          includes: '',
+    //          globals: '',
+    //          components: '',
+    //          types: '',
+    //          docs: '',
+    //          tests: ''
     //     },
     //     ado: {
     //         n: '', t: '', d: '',
@@ -449,6 +500,7 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
     //     resources: [],
     //     types: [],              
     //     assets: []
+    //     includes: []
     // }
     let asm = {};
             
@@ -474,7 +526,7 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
     asm.dest.file = pathJoin(group.dest, asmName) + '.js';
     if (!asm.skipMinify) { asm.dest.minFile =  pathJoin(group.dest, asmName) + '.min.js'; }
     if (!asm.skipGzip) { asm.dest.gzFile = (asm.dest.minFile || asm.dest.file) + '.gz'; }
-    asm.dest.files = pathJoin(group.dest, asmName) + '_files'; // connected files
+    asm.dest.files = pathJoin(group.dest, asmName) + '_files'; // connected files (like connected files concept of windows shell: https://docs.microsoft.com/en-us/windows/win32/shell/manage)
     asm.dest.lupdate = fsx.existsSync(asm.dest.file) ? fsx.statSync(asm.dest.file).mtime : null;
     asm.dest.adoCache = (options.build.useCache ? pathJoin(options.build.cache, profile.name, group.name, asmName) + '.json' : '');
 
@@ -492,26 +544,25 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
         fsx.existsSync(asm.dest.file) &&
         fsx.existsSync(asm.dest.adoCache));
 
-    // .folders .assets, .components, .config, .settings, .docs, .globals, .libs, .locales, .resources, .routes, .tests, .types
+    // .folders .assets, .l10n, .libs, .resources, .includes, .globals, .components, .types, .docs, .tests
     asm.folders = {};
     asm.folders.assets = getPathIfExists(asm.src, options.build.assembly.folders.assets);
-    asm.folders.components = getPathIfExists(asm.src, options.build.assembly.folders.components);
-    asm.folders.config = getPathIfExists(asm.src, options.build.assembly.folders.config);
-    asm.folders.settings = getPathIfExists(asm.src, options.build.assembly.folders.settings);
-    asm.folders.globals = getPathIfExists(asm.src, options.build.assembly.folders.globals);
+    asm.folders.l10n = getPathIfExists(asm.src, options.build.assembly.folders.l10n);
     asm.folders.libs = getPathIfExists(asm.src, options.build.assembly.folders.libs);
-    asm.folders.locales = getPathIfExists(asm.src, options.build.assembly.folders.locales);
     asm.folders.resources = getPathIfExists(asm.src, options.build.assembly.folders.resources);
-    asm.folders.routes = getPathIfExists(asm.src, options.build.assembly.folders.routes);
-    asm.folders.tests = getPathIfExists(asm.src, options.build.assembly.folders.tests);
+    asm.folders.includes = getPathIfExists(asm.src, options.build.assembly.folders.includes);
+    asm.folders.globals = getPathIfExists(asm.src, options.build.assembly.folders.globals);
+    asm.folders.components = getPathIfExists(asm.src, options.build.assembly.folders.components);
     asm.folders.types = getPathIfExists(asm.src, options.build.assembly.folders.types);
+    asm.folders.docs = getPathIfExists(asm.src, options.build.assembly.folders.docs);
+    asm.folders.tests = getPathIfExists(asm.src, options.build.assembly.folders.tests);
 
-    // .files .main, .settings, .config, .injections
+    // .files .main, .config, .settings, .routes
     asm.files = {};
     asm.files.main = getPathIfExists(asm.src, options.build.assembly.files.main);
-    asm.files.settings = getPathIfExists(asm.folders.settings, options.build.assembly.files.settings);
-    asm.files.config = getPathIfExists(asm.folders.config, options.build.assembly.files.config);
-    asm.files.injections = getPathIfExists(asm.src, options.build.assembly.files.injections);
+    asm.files.config = getPathIfExists(asm.folders.settings, options.build.assembly.files.config);
+    asm.files.settings = getPathIfExists(asm.folders.config, options.build.assembly.files.settings);
+    asm.files.routes = getPathIfExists(asm.src, options.build.assembly.files.routes);
 
     // .asyncTypeLoading
     asm.asyncTypeLoading = (asm.files.main === ''); // in case of custom main, async-loading is not allowed otherwise yes
@@ -556,21 +607,21 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
         asm.globals = [];                   // ordered list { file: {}, name, '', lint: t/f, content: '' }
         asm.types = [];                     // ordered list { file: '', ns: '', name, '', qualifiedName: '', lint: t/f, content: '', type: ''}
         asm.resources = [];                 // { file: {}, lint: t/f, minify: t/f}
+        asm.includes = [];                  // { file: {} }
        
         // .assets, .components, .config, .globals, .libs, .locales, .resources, .tests, .types
         // .docs and .tests will be processed when assembly is built
-        listAssets(options, asm);               // assets, namespaced-assets, libs, locales, ado.as
-        listFiles(options, asm);                // globals, resources, ado.ro
+        listAssets(options, asm);               // assets, known-assets, libs, locales, ado.as
+        listFiles(options, asm);                // globals, resources, includes, ado.ro, etc.
         listComponents(options, asm);           // components
         listTypes(options, asm);                // ado.ns, types, ado.ty 
 
         // .members
-        asm.members = asm.assets.length + asm.components.length + asm.globals.length + 
+        asm.members = asm.assets.length + asm.components.length + asm.globals.length + asm.includes.length + 
                       asm.types.length + asm.resources.length + 
                       asm.ado.ns.length + asm.ado.ro.length + 
-                      (asm.files.main ? 1 : 0) + (asm.files.settings ? 1 : 0) + (asm.files.config ? 1 : 0) + 
-                      (!asm.skipDocs && options.docs.md ? 1 : 0);
-        if (!asm.skipDocs && options.docs.json) { asm.members += '+'; }
+                      (asm.files.main ? 1 : 0) + (asm.files.settings ? 1 : 0) + (asm.files.config ? 1 : 0) + (asm.files.routes ? 1 : 0);
+        if ((!asm.skipDocs)) { asm.members += '+'; }
 
         // .content
         asm.content = ''; // will be loaded when built
@@ -579,6 +630,7 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
     // return
     return asm;
 };
+
 const listAssets = (options, asm) => {
     // duplicate-check
     let allAssets = [];
@@ -632,8 +684,10 @@ const listAssets = (options, asm) => {
             }
 
             // get all namespaced assets
-            // files that are placed inside namespaces and names started with (@). as an indicator of asset
-            files = asm.files.list.filter(file => (file.isNamespaced && file.isAsset));
+            // files that are placed inside namespaces and 
+            //  either names started with (@). as an indicator of unknown random asset
+            //  or ext is listed in known assets list
+            files = asm.files.list.filter(file => (file.isNamespaced && (file.isAsset || options.assets.ext.indexOf(file.ext) !== -1)));
             for(let file of files) {
                 dest = file.filename.replace(file.nsPath, pathJoin(asm.dest.files, file.nsName)); // move as is from namespace folder's root to <asmName>_files/<nsName> folder's root
                 addToLists(file, dest, true);
@@ -642,15 +696,44 @@ const listAssets = (options, asm) => {
             // get all files which are in libs folder
             files = filterFiles(asm.files.list, asm.folders.libs);
             for(let file of files) {
-                dest = file.filename.replace(asm.folders.libs, pathJoin(asm.dest.files, options.assembly.folders.libs)), // move as is from libs folder's root to <asmName>_files/libs folder's root
+                dest = file.filename.replace(asm.folders.libs, pathJoin(asm.dest.files, options.build.assembly.folders.libs)); // move as is from libs folder's root to <asmName>_files/libs folder's root
                 addToLists(file, dest, false);
             }
 
-            // get all files which are in locales folder
-            files = filterFiles(asm.files.list, asm.folders.locales);
+            // get all files which are in l10n folder
+            files = filterFiles(asm.files.list, asm.folders.l10n);
+            let l10nFile = '',
+                l10nSrc = '';
             for(let file of files) {
-                dest = file.filename.replace(asm.folders.locales, pathJoin(asm.dest.files, options.assembly.folders.locales)), // move as is from locales folder's root to <asmName>_files/locales folder's root
+                dest = file.filename.replace(asm.folders.l10n, pathJoin(asm.dest.files, options.build.assembly.folders.l10n, options.l10n.default)); // move as is from locales folder's root to <asmName>_files/l10n/<localeId> folder's root
                 addToLists(file, dest, false);
+                
+                // pick localized copies too of this files, for all configured locales
+                for(let locale of options.l10n.current) {
+                    if (locale !== options.l10n.default) { // default is already processed above
+                        // dest
+                        dest = file.filename.replace(asm.folders.l10n, pathJoin(asm.dest.files, options.build.assembly.folders.l10n, locale)); // move as is from locales folder's root to <asmName>_files/l10n/<localeId> folder's root
+
+                        //. change source, to pick it from ./l10n/<localeId>/... insead of .src/
+                        l10nSrc = pathJoin(options.l10n.src, locale);
+                        l10nFile = Object.assign({}, file);
+                        l10nFile.file = l10nFile.file.replace(options.build.src, l10nSrc);
+                        if (!fsx.existsSync(l10nFile.file)) {
+                            if (options.l10n.copyDefault) { // if default locale's copy is to be used
+                                l10nFile = file;
+                            } else {
+                                throw `Localized version (${l10nFile.file}) missing for '${locale}' locale. (${file.file})`;
+                            }
+                        } else {
+                            // fix rest paths as well
+                            l10nFile.folder = l10nFile.folder.replace(options.build.src, l10nSrc);
+                            l10nFile.filename = l10nFile.filename.replace(options.build.src, l10nSrc);
+                        }
+
+                        // add this too
+                        addToLists(l10nFile, dest, false);
+                    }
+                }
             }
         }
     }
@@ -682,9 +765,26 @@ const listFiles = (options, asm) => {
             }
         }
 
+        // includes
+        if (asm.folders.includes) {
+            // get all files which are in includes folder
+            let files = filterFiles(asm.files.list, asm.folders.includes),
+                item = null;
+            for(let file of files) { // { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsName, nsPath }
+                if (file.ext !== 'js') { throw `Only javascript files can be included. (${file.file})`;  }
+                // build item { file: {}, name: '', filename }
+                item = {
+                    file: file,
+                    filename: file.filename.replace(asm.folders.includes, '.'),
+                    name: file.filename.replace(asm.folders.includes, '').substr(1)       // './includes/a/b/c.txt' --> 'a/b/c.txt'
+                };
+                asm.includes.push(item);
+            }
+        }
+
         // resources
         if (asm.folders.resources) {
-            // get all files which are in assets folder
+            // get all files which are in resources folder
             let files = filterFiles(asm.files.list, asm.folders.resources),
                 item = null;
             for(let file of files) { // { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsName, nsPath }
@@ -702,60 +802,46 @@ const listFiles = (options, asm) => {
         }
         
         // routes
-        if (asm.folders.routes) {
-            // get all files which are in routes folder
-            let files = filterFiles(asm.files.list, asm.folders.routes, true),
-                allNames = [],
-                items = null;
+        if (asm.files.routes) {
+            // read file's content, check for duplicates, add to ADO and finally sort by m + i
+            // Each route Definition can be: { name, mount, path, handler, verbs[], mw[], index } 
+            // {
+            //   n - name:  route name, to access route programmatically, all names across files must be unique 
+            //              these can be anything: a.b.c or a/b/c style -- generally a simplified version of the path itself can be name
+            //              e.g., if path is: 'order/edit/:id?' -- name can be: 'order/edit' OR 'order.edit'
+            //   m - mount: route root mount name - by default it is 'main', as per config.json setting, it can be any other mount also 
+            //              each mount is a different express/page app for server/client
+            //   p - path:  route path in relation to the mount
+            //   h - handler:   qualified type name (generally a class) that handles this route
+            //   v - verbs: name of the verbs supported on this route, like get, post, etc. - handler must have the same 
+            //              name methods to handle this verb - methods can be sync or async
+            //              can be defined as comma delimited string
+            //   w - middleware:    standard server (express middlewares)/client (custom types) middleware definitions 
+            //                      as per usage context -> { name: '', func: '', args: [] } OR { name: '', args: [] }
+            //   i - index: any + or - number to move routes up or down wrt other routes in current assembly, as well as
+            //              across assemblies. All routes from all assemblies are sorted by index before being activated
+            //              routes are indexed first and then applied in context of their individual mount
+            //              mount's order in config ultimately defines the overall order first than the index of the route 
+            //              itself inside the mount
+            //  }            
+            let allNames = [],
+                items = fsx.readJsonSync(asm.files.routes, 'utf8');
+            for(let item of items) {
+                // validate
+                if (!item.name || !item.path || !item.handler) {throw `Invalid route definition found. (${item.name})`; } // mandatory fields
+                if (allNames.indexOf(item.name) !== -1) { throw `Duplicate route name found. (${item.name})`; }
+                allNames.push(item.name);
 
-            // read all file's content, check for duplicates, add to ADO and finally sort by m + i
-            for(let file of files) { // { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsName, nsPath }
-                if (file.ext === 'json') { 
-                    // Each route Definition can be: { name, mount, path, handler, verbs[], mw[], index } 
-                    // {
-                    //   n - name:  route name, to access route programmatically, all names across files must be unique 
-                    //              these can be anything: a.b.c or a/b/c style -- generally a simplified version of the path itself can be name
-                    //              e.g., if path is: 'order/edit/:id?' -- name can be: 'order/edit' OR 'order.edit'
-                    //   m - mount: route root mount name - by default it is 'main', as per config.json setting, it can be any other mount also 
-                    //              each mount is a different express/page app for server/client
-                    //   p - path:  route path in relation to the mount
-                    //   h - handler:   qualified type name (generally a class) that handles this route
-                    //   v - verbs: name of the verbs supported on this route, like get, post, etc. - handler must have the same 
-                    //              name methods to handle this verb - methods can be sync or async
-                    //              can be defined as comma delimited string
-                    //   w - middleware:    standard server (express middlewares)/client (custom types) middleware definitions 
-                    //                      as per usage context -> { name: '', func: '', args: [] } OR { name: '', args: [] }
-                    //   i - index: any + or - number to move routes up or down wrt other routes in current assembly, as well as
-                    //              across assemblies. All routes from all assemblies are sorted by index before being activated
-                    //              routes are indexed first and then applied in context of their individual mount
-                    //              mount's order in config ultimately defines the overall order first than the index of the route 
-                    //              itself inside the mount
-                    //  }
-                    items = fsx.readJsonSync(file.file, 'utf8');
-                    for(let item of items) {
-                        // validate
-                        if (!item.name || !item.path || !item.handler) { // mandatory fields
-                            throw `Invalid route definition found. (${file.file})`;
-                        }
-
-                        // duplicate check
-                        if (allNames.indexOf(item.name) !== -1) {
-                            throw `Duplicate route name (${item.name}) found. (${file.file})`;
-                        }
-                        allNames.push(item.name);
-
-                        // add item { n, m, p, h, v, w, i }
-                        asm.ado.ro.push({
-                            n: item.name,
-                            m: item.m || '',        // empty means 'main'
-                            p: item.path,
-                            h: item.handler,
-                            v: item.verbs || '',    // empty means 'get' (on server) and 'view' (on client)
-                            w: item.mw || [],
-                            i: item.index || 0
-                        });
-                    }
-                }
+                // add item { n, m, p, h, v, w, i }
+                asm.ado.ro.push({
+                    n: item.name,
+                    m: item.m || '',        // empty means 'main'
+                    p: item.path,
+                    h: item.handler,
+                    v: item.verbs || '',    // empty means 'get' (on server) and 'view' (on client)
+                    w: item.mw || [],
+                    i: item.index || 0
+                });
             }
 
             // sort all routes by mount + index (index is padded to a 4 place leading zeros, so 'main1' comes first than 'main11')
@@ -800,6 +886,9 @@ const listTypes = (options, asm) => {
             name = '',
             adoItem = null;
         for(let file of files) { // { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsName, nsPath }
+            // types are always .js files, any other extension could be known assets, so process only .js files here
+            if (file.ext !== 'js') { continue; }
+
             // duplicate check
             name = file.basename.replace('.' + file.ext, ''); // remove ext
             if (name.indexOf('.') !== -1) { throw `Type name (${name}) cannot have dots. (${file.file})`; }

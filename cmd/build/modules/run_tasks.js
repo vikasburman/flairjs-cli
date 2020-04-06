@@ -47,6 +47,49 @@ module.exports = async function(options, mode, level, obj) {
                 asm: (level === 'top' ? null : (level === 'profile' ? null : (level === 'grpup' ? null : obj)))
             };
             
+            // add path resolver function to config
+            taskConfig.path = (src, dest) => {
+                switch(taskConfig.level) {
+                    case '':
+                        if (src.startsWith('../')) { // project root
+                            src = src.substr(1); // make ../ -> ./
+                            dest = pathJoin('./', dest || '');
+                        } else if(src.startsWith('./')) { // source root
+                            src = pathJoin(options.src, src);
+                            dest = pathJoin(options.dest, src);
+                        }
+                        break;
+                    case 'profile':
+                        if (src.startsWith('../')) { // source root
+                            src = pathJoin(options.src, src.substr(1));
+                            dest = pathJoin(options.dest, dest || src.substr(1));
+                        } else if(src.startsWith('./')) { // profile root
+                            src = pathJoin(profile.src, src);
+                            dest = pathJoin(profile.dest, dest || src);
+                        }
+                        break;
+                    case 'group':
+                        if (src.startsWith('../')) { // profile root
+                            src = pathJoin(profile.src, src.substr(1));
+                            dest = pathJoin(profile.dest, dest || src.substr(1));
+                        } else if(src.startsWith('./')) { // group root
+                            src = pathJoin(group.src, src);
+                            dest = pathJoin(group.dest, dest || src);
+                        }
+                        break;
+                    case 'asm':
+                        if (src.startsWith('../')) { // group root
+                            src = pathJoin(group.src, src.substr(1));
+                            dest = pathJoin(group.dest, dest || src.substr(1));
+                        } else if(src.startsWith('./')) { // asm root
+                            src = pathJoin(asm.src, src);
+                            dest = pathJoin(asm.dest.files, dest || src);
+                        }
+                        break;
+                }   
+                return { src: src, dest: dest };
+            };
+
             // add
             tasks.push({
                 task: item.task,
