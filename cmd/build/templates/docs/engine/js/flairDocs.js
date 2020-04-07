@@ -146,7 +146,7 @@
                 document.title = `${data.info.title} - ${data.content.docs.parent.name ? data.content.docs.parent.name + ' - ' : ''}${data.content.name}`;
             }
         };
-        const loadLocation = async () => {
+        const parseUrl = async (hash) => {
             const getPackage = (name) => {
                 if (!name) { name =  (data.current.package ? data.current.package.name : '') || data.packages.default; }
                 let pkg = data.packages.list.find((a) => a.name === name);
@@ -174,37 +174,6 @@
                 }
                 return loc;
             };         
-            const loadSearch = async (file) => {
-                // load
-                let searchJson = await getData(file);
-                if (searchJson) {
-                    return MiniSearch.loadJSON(JSON.stringify(searchJson.index,), searchJson.options);
-                } else {
-                    return null;
-                }
-            };
-            const groupContentItems = () => {
-                if (data.content && data.content.items) {
-                    let items = {
-                        all: data.content.items,        // { link, name, group, desc }
-                        grouped: []                     // { group,  items: { link, name, desc } }
-                    };
-                    let groups = [],
-                        groupedItem = null;
-                    for(let item of items.all) {
-                        groupedItem = items.grouped.filter(i => i.group === item.group)[0];
-                        if(!groupedItem) {
-                            groupedItem = {
-                                group: item.group,
-                                items: []
-                            };
-                            items.grouped.push(groupedItem);
-                        }
-                        groupedItem.items.push({ link: item.link, name: item.name, desc: item.desc });
-                    }
-                    data.content.items = items;
-                }
-            };
 
             // ----------------------------------------------------------------------------------------------------------------------------
             // possible url patterns                                                    Examples
@@ -258,13 +227,9 @@
             // <collection>/<version>/<locale>/<asm>/settings/<setting>/                ./flairjs/v1/en/flair/settings/bootstrapper.json
             // ----------------------------------------------------------------------------------------------------------------------------
 
-            // clear previous (404 scenario)
-            data.content = null;
-            data.section = '';
 
             // read location from hash
-            let hash = location.hash.replace('#/', ''),
-                length = 0,
+            let length = 0,
                 items = '',
                 parts = {
                     package: null,
@@ -371,6 +336,49 @@
                 }
             }
             
+            // return
+            return parts;
+        };
+        const go = async () => {
+            const loadSearch = async (file) => {
+                // load
+                let searchJson = await getData(file);
+                if (searchJson) {
+                    return MiniSearch.loadJSON(JSON.stringify(searchJson.index,), searchJson.options);
+                } else {
+                    return null;
+                }
+            };
+            const groupContentItems = () => {
+                if (data.content && data.content.items) {
+                    let items = {
+                        all: data.content.items,        // { link, name, group, desc }
+                        grouped: []                     // { group,  items: { link, name, desc } }
+                    };
+                    let groups = [],
+                        groupedItem = null;
+                    for(let item of items.all) {
+                        groupedItem = items.grouped.filter(i => i.group === item.group)[0];
+                        if(!groupedItem) {
+                            groupedItem = {
+                                group: item.group,
+                                items: []
+                            };
+                            items.grouped.push(groupedItem);
+                        }
+                        groupedItem.items.push({ link: item.link, name: item.name, desc: item.desc });
+                    }
+                    data.content.items = items;
+                }
+            };   
+
+            // clear previous (404 scenario)
+            data.content = null;
+            data.section = '';
+
+            // load location from current hash
+            let parts = await parseUrl(location.hash.replace('#/', ''));
+
             // load one-time-loading data, if package, version or locale is changed
             let isError = false;
             if (!data.current.package || 
@@ -433,8 +441,8 @@
                 groupContentItems();
             }
 
-            // render to refresh
-            await render();
+            // render
+            await render();            
         };
         const loadTheme = async (theme) => {
             const getTemplate = (file) => {
@@ -656,6 +664,8 @@
             data = {};
             data.packages = json.packages;
             data.builder = json.builder;
+            data.branding = json.branding;
+            data.ui = json.ui;
             data.dl = dl;
             data.go = (url) => { location.hash = url; };
             data.home = () => { location.hash = ''; };
@@ -711,7 +721,7 @@
                 // load theme
                 if (await loadTheme(json.theme)) {
                     // setup location change handler
-                    addEventListener('hashchange', loadLocation, false);
+                    addEventListener('hashchange', go, false);
 
                     // done
                     result = true;
@@ -728,13 +738,14 @@
             start: async () => {
                 if (!isStarted) {
                     isStarted = await init();
-                    if (isStarted) { await loadLocation(); }
+                    if (isStarted) { await go(); }
                 }
             },
 
             // define custom function
-            // for use by themes
-            func: (name, fn) => { func[name] = func[name] || fn; } // cannot overwrite a predefined function
+            // for use by themes or elsewhere
+            // e.g., pages
+            func: (name, fn) => { func[name] = fn; } 
         };
 
         // return

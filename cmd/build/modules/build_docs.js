@@ -49,40 +49,45 @@ exports.finish = async (options) => {
     // write package
     await writePackage(options);
 
+    // write l10n template
+    await writeL10NTemplate(options);
+
     // run for each locale again
-    let locSrc = getDest(options),
-        locDest = '';
-    for(let locale of options.l10n.current) {
-        if (locale !== options.l10n.default) { // skip for default, which is already written
-            // use only if this locale is configured for documents generation
-            if (options.docs.l10n.current.indexOf(locale) === -1) { continue; }
+    if (options.l10n.perform && options.docs.l10n.perform) { // only when master l10n an docs l10n is configured
+        let locSrc = getDest(options),
+            locDest = '';
+        for(let locale of options.l10n.current) {
+            if (locale !== options.l10n.default) { // skip for default, which is already written
+                // use only if this locale is configured for documents generation
+                if (options.docs.l10n.current.indexOf(locale) === -1) { continue; }
 
-            // init for this locale
-            initLocale(options, locale);
+                // init for this locale
+                initLocale(options, locale);
 
-            // copy whole default-locale folder as is
-            // NOTE: since getDest always pick initialized locale, hence locSrc refers to default
-            // and calling it again now (after reinit above) it gives the new one
-            if (options.docs.l10n.copyDefault) {
-                locDest = getDest(options);
-                copyDir.sync(locSrc, locDest, {
-                    utimes: true,
-                    mode: true,
-                    cover: true
-                });
+                // copy whole default-locale folder as is
+                // NOTE: since getDest always pick initialized locale, hence locSrc refers to default
+                // and calling it again now (after reinit above) it gives the new one
+                if (options.docs.l10n.copyDefault) {
+                    locDest = getDest(options);
+                    copyDir.sync(locSrc, locDest, {
+                        utimes: true,
+                        mode: true,
+                        cover: true
+                    });
+                }
+
+                // init package (in context of this locale)
+                initPackage(options);
+
+                // process docs for each assembly in que (in context of this locale)
+                for(let asm of options.docs.temp.asms) {
+                    // write asm docs
+                    await writeAsm(options, asm);
+                }
+
+                // write package (in context of this locale)
+                await writePackage(options);
             }
-
-            // init package (in context of this locale)
-            initPackage(options);
-
-            // process docs for each assembly in que (in context of this locale)
-            for(let asm of options.docs.temp.asms) {
-                // write asm docs
-                await writeAsm(options, asm);
-            }
-
-            // write package (in context of this locale)
-            await writePackage(options);
         }
     }
 
@@ -141,8 +146,14 @@ const getContentFromCode = (options, file, code) => {
                 `;
             }            
         }
-    } else {
+    } else { // default locale
         content = code;
+
+        // load-up docs blocks in file itself for later processing during template generation, 
+        // if l10n templates are being processed
+        if (options.l10n.perform && options.l10n.templates.generate && options.docs.l10n.perform) { // only when docs also being localized
+            file.docs = extractBlocks(code).join('\n\n');
+        }
     }
     return content;
 };
@@ -1531,7 +1542,7 @@ const writeThemes = async (options) => {
     });
 
     // copy default favicon.png at root
-    let favicon = pathJoin(inbuiltThemes, 'images', 'favicon.png');
+    let favicon = pathJoin(inbuiltThemes, 'default', 'images', 'favicon.png');
     fsx.copyFileSync(favicon, pathJoin(options.docs.dest.root, 'favicon.png'));    
 };
 const writeEngine = async (options) => {
@@ -1564,9 +1575,9 @@ const writeEngine = async (options) => {
     let engineContent = fsx.readFileSync(engineFile, 'utf8');
     engineContent = replaceAll(engineContent, '<<title>>', options.package.title || '');
     engineContent = replaceAll(engineContent, '<<desc>>', options.package.description || '');
-    if (options.docs.favicon) {
+    if (options.docs.branding.favicon) {
         engineContent = replaceAll(engineContent, '<<favicon_start>>', "");
-        engineContent = replaceAll(engineContent, '<<favicon>>', options.docs.favicon);
+        engineContent = replaceAll(engineContent, '<<favicon>>', options.docs.branding.favicon);
         engineContent = replaceAll(engineContent, '<<favicon_end>>', "");
     } else {
         engineContent = replaceAll(engineContent, '<<favicon_start>>', "<!--");
@@ -1683,17 +1694,101 @@ const writeDocs = async (options) => {
         builder: {
             name: options.buildInfo.name,
             version: options.buildInfo.version
-        },         
+        },
         packages: {
             list: getPackages(),
             default: options.docs.packages.default || options.package.name
         },
-        theme: getThemeData()
+        theme: getThemeData(),
+        branding: {
+            favicon: (options.docs.branding.favicon ? `./${options.docs.branding.favicon}` : ''),
+            logo: options.docs.branding.logo || '',
+            home: options.docs.branding.home || '',
+            highlights: options.docs.branding.highlights || ''
+        },
+        ui: options.docs.ui
     };
+
+    // write favicon, if defined
+    if (options.docs.branding.favicon) {
+        let favIcon = pathJoin(options.build.src, 'docs', options.docs.branding.favicon);
+        if (fsx.existsSync(favIcon)) {
+            fsx.copySync(favIcon, pathJoin(options.docs.dest.root, options.docs.branding.favicon));
+        }
+    }
+    // also check for default favicon
+    let favIcon = pathJoin(options.build.src, 'docs', 'favicon.ico');
+    if (fsx.existsSync(favIcon)) {
+        fsx.copySync(favIcon, pathJoin(options.docs.dest.root, 'favicon.ico'));
+    }
 
     // write (./index.json)
     let file = pathJoin(options.docs.dest.root, 'index.json');
     plainWrite(options, file, data);
+};
+const writeL10NTemplate = async (options) => {
+    const copyFolder = (src, dest) => {
+        fsx.ensureDirSync(dest);
+        copyDir.sync(src, dest, {
+            utimes: true,
+            mode: true,
+            cover: true
+        });
+    };
+    const copyFiles = (files, destRoot, isWriteDocs) => {
+        let l10nFileTemplate = '';
+        for(let file of files) {
+            l10nFileTemplate = file.filename.replace(options.build.src, destRoot);
+            fsx.ensureDirSync(path.dirname(l10nFileTemplate));
+            if (isWriteDocs) {
+                fsx.writeFileSync(l10nFileTemplate, file.docs, 'utf8');
+            } else {
+                fsx.copyFileSync(file.file, l10nFileTemplate);
+            }
+        }
+    };
+
+    // generate/update template, if not already done
+    if (options.l10n.perform && options.l10n.templates.generate) { // may or may not include docs templates
+        let l10nFolder = '';
+
+        // ensure template dest is created
+        let templateDest = pathJoin(options.l10n.src, options.l10n.templates.dest);
+        fsx.ensureDirSync(templateDest);
+
+        if (options.docs.l10n.perform) { // applicable only when docs' localization is being done
+            // copy whole docs folder as it, because all pages, guides and info files 
+            // needs to be localized
+            l10nFolder = pathJoin(options.build.src, 'docs');
+            if (fsx.existsSync(l10nFolder)) { copyFolder(l10nFolder, pathJoin(templateDest, 'docs')); }
+        }
+
+        // copy assembly specific stuff
+        for(let asm of options.docs.temp.asms) {
+            // copy whole l10n folder as is (for all assemblies), 
+            // because all known l10n files needs to be localized
+            l10nFolder = asm.folders.l10n;
+            if (l10nFolder && fsx.existsSync(l10nFolder)) { copyFolder(l10nFolder, l10nFolder.replace(options.build.src, templateDest)); }
+
+            if (options.docs.l10n.perform) { // applicable only when docs' localization is being done
+                // copy whole asm/docs folder as it, because all info files etc.
+                // needs to be localized
+                l10nFolder = asm.folders.docs;
+                if (l10nFolder && fsx.existsSync(l10nFolder)) { copyFolder(l10nFolder, l10nFolder.replace(options.build.src, templateDest)); }
+            }
+
+            // copy all in-place localized assets
+            let files = asm.files.list.filter(a => a.isL10n);
+            copyFiles(files, templateDest);
+
+            if (options.docs.l10n.perform) { // applicable only when docs' localization is being done
+                // copy all files where docs blocks are loaded in first-pass
+                // means where documentation was processed for default locale
+                files = asm.files.list.filter(a => a.docs !== '');
+                copyFiles(files, templateDest, true);
+            }
+        }
+    }
 };
 
 // locales
@@ -1783,7 +1878,7 @@ const writePackage = async (options) => {
 
                 // do not copy special folders
                 if(filepath.startsWith(path.join(srcDocs, 'guides')) ||
-                   filepath.startsWith(path.join(srcDocs, 'pages'))) { // used path.join instead of pathJoin on purpose
+                    filepath.startsWith(path.join(srcDocs, 'pages'))) { // used path.join instead of pathJoin on purpose
                     return false;
                 }
   

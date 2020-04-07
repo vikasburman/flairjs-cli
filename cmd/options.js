@@ -124,6 +124,9 @@ module.exports = {
 
     // localization
     l10n: {
+        // master switch for localization (both for build and docs)
+        perform: true,
+
         // localized source replica files
         // underneath this folder should exists locale specific folder to keep same name source files under all supported locales
         // folder names should match the names defined in locales array below
@@ -154,7 +157,18 @@ module.exports = {
 
         // if a copy of default locale files should be used
         // for all missing locale files in a non-default locale
-        copyDefault: true
+        copyDefault: true,
+
+        // localization template files
+        templates: {
+            // if files are to be generated/updated for all files that are
+            // to be localized (as per their placement in default locale's context)
+            // this can serve as ready reference for l10n work
+            generate: true,
+
+            // this is in context of l10n source itself
+            dest: './template'
+        }
     },
 
     // build opetation configuration
@@ -720,6 +734,9 @@ module.exports = {
         perform: true,
 
         l10n: {
+            // master switch for localization (for docs)
+            perform: true,
+
             // supported locales for documentation of current version
             // these locales which are added here must also be adeed in master l10n.current list
             current: ['en'],
@@ -760,8 +777,11 @@ module.exports = {
             root: './docs',
 
             // where to generate docs .json files under the root
-            content: 'content',
+            content: 'content'
         },
+
+        // google analytics id for tracking (if required)
+        ga: '',
 
         // which theme to pick
         // custom themes can be installed in \themes folder
@@ -781,15 +801,91 @@ module.exports = {
         // inbuilt default theme
         theme: 'default',
 
-        // favicon path (in context of docs root)
-        favicon: 'favicon.png',
+        // basic branding can be done even without building 
+        // full custom theme
+        branding: {
+            // favicon path (in context of docs root without any path)
+            favicon: 'favicon.png',
 
-        // logo path (in context of docs root)
-        // logo should be of 512x512
-        logo: './themes/default/images/logo.png',
+            // logo path (in context of docs root)
+            // logo should be of 512x512
+            logo: './themes/default/images/logo.png',            
 
-        // google analytics id for tracking (if required)
-        ga: '',
+            // define custom highlight page, if any
+            // this page can only exists only as default package's page
+            // when not defined, it will use theme's default highlight fragment instead
+            highlights: '',
+
+            // define custom home page, if any
+            // this page can only exists only as default package's page
+            // when not defined, it will use theme's default home fragment
+            home: '',
+        },
+
+        ui: {
+            // if search was built and this is set to true, search will be enabled
+            search: true,
+
+            // if multiple packages exists and this is set to true, collections selector will be enabled
+            packages: true,
+
+            // if multiple versions in selected package exists and this is set to true, version selector will be enabled
+            versions: true,
+
+            // if multiple locales are configured and this is set to true, locale selector will be enabled
+            locales: true,
+
+            // if breadcrumbs to be shown, where applicable
+            breadcrubms: true,
+
+            // any custom links that needs to be shown on UI
+            // any named links can be defined here, which can be referenced in 
+            // various menus in required order
+            // linkName: { 
+            //      title: ''
+            //          '-': to show divider line
+            //          'text': to show given text as menu title
+            //          'ns.key:value': to pick localized text from given ns.key - from strings.json file and by default use given value as text itself
+            //      link: '' 
+            //          to open given link
+            //          if link is not given, the item will be treated as a menu group item
+            //      img: ''
+            //          used only when link is placed on services menu (where title is set as tooltip)
+            //  }
+            links: {
+                '-': { title: '-' },
+                twitter: { title: 'services.twitter:Twitter', img: '', link: '#' },
+                facebook: { title: 'services.facebook:Facebook', img: '', link: '#' },
+                linkedin: { title: 'services.linkedin:LinkedIn', img: '', link: '#' },
+                youtube: { title: 'services.youtube:YouTube', img: '', link: '#' },
+                github: { title: 'services.github:Github', img: '', link: '#' },
+                npm: { title: 'services.npm:NPM', img: '', link: '#' },
+                medium: { title: 'services.medium:Medium', img: '', link: '#' },
+                cdn: { title: 'services.cdn:CDN', img: '', link: '#' },
+            },
+
+            // menu items for UI
+            menus: {
+                // 2-level menus can be defined as:
+                // (max 6 top level menu groups are supported)
+                // topLevelLink1: link1, link2, link3, ...
+                // topLevelLink2: link1, link2, link3, ...
+                // topLevelLinkOnly
+                top: [],
+
+                // 2-level menus can be defined as:
+                // (max 3 top level menu groups are supported)
+                // topLevelLink1: link1, link2, link3, ...
+                // topLevelLink2 link1, link2, link3, ...
+                // ...
+                bottom: [],
+
+                // 1-level menus can be defined as:
+                // (max 5 menu items are supported)
+                // link1, link2, link3, ...
+                services: []
+            }
+        },
 
         // in a multi-project scenario, where docs need to be served from one place as collection
         // there must be one main repo which has this definition setup, and all

@@ -37,7 +37,8 @@ const doTask = (argv, done) => {
         options.build.assembly.lint.members = false;
         options.minify.perform = false;
         options.gzip.perform = false;
-        options.assets.gzip = true;  
+        options.assets.gzip = true; 
+        options.l10n.perform = false;
         options.docs.perform = false;
         options.pack.perform = false;
     }

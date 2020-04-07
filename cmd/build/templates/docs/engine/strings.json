@@ -83,5 +83,16 @@
         "remarks": "Remarks",
         "fiddle": "Live Example",
         "seealso": "See Also"        
+    },
+
+    "services": {
+        "twitter": "Twitter",
+        "facebook": "Facebook",
+        "linkedin": "LinkedIn",
+        "youtube": "YouTube",
+        "github": "Github",
+        "npm": "NPM",
+        "medium": "Medium",
+        "cdn": "CDN"
     }
 }

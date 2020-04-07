@@ -5,7 +5,6 @@ const copyDir = require('copy-dir');
 const junk = require('junk');
 const rrd = require('recursive-readdir-sync');
 const wildcards = require('../../shared/modules/wildcard_match');
-const delAll = require('../../shared/modules/delete_all');
 const getFolders = require('../../shared/modules/get_folders');
 const pathJoin = require('../../shared/modules/path_join');
 const mergeObjects = require('../../shared/modules/merge_objects');
@@ -133,10 +132,12 @@ const getFiles = (asmName, root, exclude, changedSince) => {
             basename: path.basename(f),                     // abc.js / abc.min.js / abc.json 
             ext: path.extname(f).substr(1), // remove .     // js | json
             index: 0,                                       // -99 / 0
-            isAsset: false,                                 // true, if starts with '(@).' OR if kept inside 'types' folder and ext matches as listed in options.assets.ext
+            isAsset: false,                                 // true, if starts with '(@).' OR ($). OR if kept inside 'types' folder and ext matches as listed in options.assets.ext
+            isL10n: false,                                  // true, if starts with '($).'
             isNamespaced: false,                            // true, if file is a namespaced file 
             nsName: '',                                     // empty for root namesapace, else name
-            nsPath: ''                                      // namespace path
+            nsPath: '',                                     // namespace path
+            docs: ''                                        // extracted docs symbols - loaded in code files after one pass, that helps in template generation
         };
 
         // extract namespace
@@ -189,7 +190,7 @@ const getFiles = (asmName, root, exclude, changedSince) => {
 
         // get index and type of file
         // any file inside assembly folder can be named as:
-        // {(#n).|(@).}fileName.ext
+        // {(#n).|(@).|($).}fileName.ext
         // index can be:
         //  (#n).         <-- file to be placed at nth positon wrt other files
         //  all files are given 0 index by default
@@ -213,9 +214,18 @@ const getFiles = (asmName, root, exclude, changedSince) => {
                 file.filename = pathJoin(file.folder, file.basename);
             }
         } else if (file.basename.startsWith('(@).')) { // in-place namespaced asset of the assembly
-            file.basename = file.basename.substr(4);
-            file.filename = pathJoin(file.folder, file.basename);
-            file.isAsset = true;
+            if (file.isNamespaced) {
+                file.basename = file.basename.substr(4);
+                file.filename = pathJoin(file.folder, file.basename);
+                file.isAsset = true;
+            }
+        } else if (file.basename.startsWith('($).')) { // in-place namespaced localized asset of the assembly
+            if (file.isNamespaced) {
+                file.basename = file.basename.substr(4);
+                file.filename = pathJoin(file.folder, file.basename);
+                file.isAsset = true;
+                file.isL10n = true;
+            }
         }
         if (!file.filename) { file.filename = file.file; }
 
@@ -674,64 +684,78 @@ const listAssets = (options, asm) => {
     };
 
     if (asm.files.list.length > 0) {
-        if (asm.folders.assets) {
-            // get all files which are in assets folder
-            let files = filterFiles(asm.files.list, asm.folders.assets),
-                dest = '';
-            for(let file of files) { // { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsName, nsPath }
+        // since assets have variety of conditions to check, 
+        // therefore instead of filtering the list, process entire list and
+        // take decisions in one go itself
+        let root = '',
+            dest = '';
+        for (let file of asm.files.list) { // { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsName, nsPath }
+            // process files in assets folder
+            root = asm.folders.assets; if (!root.endsWith('/')) { root += '/'; }
+            if (file.file.startsWith(root)) {
                 dest = file.filename.replace(asm.folders.assets, asm.dest.files); // move as is from assets folder's root to <asmName>_files folder's root
                 addToLists(file, dest, false);
-            }
-
-            // get all namespaced assets
-            // files that are placed inside namespaces and 
-            //  either names started with (@). as an indicator of unknown random asset
-            //  or ext is listed in known assets list
-            files = asm.files.list.filter(file => (file.isNamespaced && (file.isAsset || options.assets.ext.indexOf(file.ext) !== -1)));
-            for(let file of files) {
-                dest = file.filename.replace(file.nsPath, pathJoin(asm.dest.files, file.nsName)); // move as is from namespace folder's root to <asmName>_files/<nsName> folder's root
-                addToLists(file, dest, true);
-            }
-
-            // get all files which are in libs folder
-            files = filterFiles(asm.files.list, asm.folders.libs);
-            for(let file of files) {
-                dest = file.filename.replace(asm.folders.libs, pathJoin(asm.dest.files, options.build.assembly.folders.libs)); // move as is from libs folder's root to <asmName>_files/libs folder's root
-                addToLists(file, dest, false);
-            }
-
-            // get all files which are in l10n folder
-            files = filterFiles(asm.files.list, asm.folders.l10n);
-            let l10nFile = '',
-                l10nSrc = '';
-            for(let file of files) {
-                dest = file.filename.replace(asm.folders.l10n, pathJoin(asm.dest.files, options.build.assembly.folders.l10n, options.l10n.default)); // move as is from locales folder's root to <asmName>_files/l10n/<localeId> folder's root
-                addToLists(file, dest, false);
-                
-                // pick localized copies too of this files, for all configured locales
-                for(let locale of options.l10n.current) {
-                    if (locale !== options.l10n.default) { // default is already processed above
-                        // dest
-                        dest = file.filename.replace(asm.folders.l10n, pathJoin(asm.dest.files, options.build.assembly.folders.l10n, locale)); // move as is from locales folder's root to <asmName>_files/l10n/<localeId> folder's root
-
-                        //. change source, to pick it from ./l10n/<localeId>/... insead of .src/
-                        l10nSrc = pathJoin(options.l10n.src, locale);
-                        l10nFile = Object.assign({}, file);
-                        l10nFile.file = l10nFile.file.replace(options.build.src, l10nSrc);
-                        if (!fsx.existsSync(l10nFile.file)) {
-                            if (options.l10n.copyDefault) { // if default locale's copy is to be used
-                                l10nFile = file;
+            } else {
+                // process files in libs folder
+                root = asm.folders.libs; if (!root.endsWith('/')) { root += '/'; }
+                if (file.file.startsWith(root)) {
+                    dest = file.filename.replace(asm.folders.libs, pathJoin(asm.dest.files, options.build.assembly.folders.libs)); // move as is from libs folder's root to <asmName>_files/libs folder's root
+                    addToLists(file, dest, false);
+                } else {
+                    // process namespaced, inplace and known assets (excluding localized assets)
+                    //  where names started with (@). as an indicator of random asset
+                    //  or ext is listed in known assets list
+                    if ((file.isAsset || (file.isNamespaced && options.assets.ext.indexOf(file.ext) !== -1)) && !file.isL10n) {
+                        dest = file.filename.replace(file.nsPath, pathJoin(asm.dest.files, file.nsName)); // move as is from namespace folder's root to <asmName>_files/<nsName> folder's root
+                        addToLists(file, dest, true);
+                    } else {
+                        // process all localized assets
+                        // files that are in l10n folder or placed elsewhere 
+                        // either inside namespace or outside namnespace
+                        root = asm.folders.l10n; if (!root.endsWith('/')) { root += '/'; }
+                        if (((file.isAsset || (file.isNamespaced && options.assets.ext.indexOf(file.ext) !== -1)) && file.isL10n) || 
+                            file.file.startsWith(root)) {
+                            let l10nFile = '',
+                                l10nSrc = '',
+                                destTemplate = '';
+                            if (file.file.startsWith(root)) {
+                                destTemplate = file.filename.replace(asm.folders.l10n, pathJoin(asm.dest.files, options.build.assembly.folders.l10n, '<<locale>>')); // move as is from locales folder's root to <asmName>_files/l10n/<localeId> folder's root
                             } else {
-                                throw `Localized version (${l10nFile.file}) missing for '${locale}' locale. (${file.file})`;
+                                destTemplate = file.filename.replace(file.nsPath, pathJoin(asm.dest.files, options.build.assembly.folders.l10n, '<<locale>>', file.nsName)); // move as is from namespace folder's root to <asmName>_files/l10n/<localeId>/<nsName> folder's root
                             }
-                        } else {
-                            // fix rest paths as well
-                            l10nFile.folder = l10nFile.folder.replace(options.build.src, l10nSrc);
-                            l10nFile.filename = l10nFile.filename.replace(options.build.src, l10nSrc);
-                        }
 
-                        // add this too
-                        addToLists(l10nFile, dest, false);
+                            // default locale copy
+                            dest = destTemplate.replace('<<locale>>', options.l10n.default);
+                            addToLists(file, dest, true);
+                
+
+                            // pick localized copies (of the files, for all configured locales)
+                            if (options.l10n.perform) { // only when localization for build is to be performed
+                                for(let locale of options.l10n.current) {
+                                    if (locale !== options.l10n.default) { // default is already processed above
+                                        //. change source, to pick it from ./l10n/<localeId>/... insead of .src/
+                                        l10nSrc = pathJoin(options.l10n.src, locale);
+                                        l10nFile = Object.assign({}, file);
+                                        l10nFile.file = l10nFile.file.replace(options.build.src, l10nSrc);
+                                        if (!fsx.existsSync(l10nFile.file)) {
+                                            if (options.l10n.copyDefault) { // if default locale's copy is to be used
+                                                l10nFile = file;
+                                            } else {
+                                                throw `Localized version (${l10nFile.file}) missing for '${locale}' locale. (${file.file})`;
+                                            }
+                                        } else {
+                                            // fix rest paths as well
+                                            l10nFile.folder = l10nFile.folder.replace(options.build.src, l10nSrc);
+                                            l10nFile.filename = l10nFile.filename.replace(options.build.src, l10nSrc);
+                                        }
+
+                                        // locale specific copy
+                                        dest = destTemplate.replace('<<locale>>', locale);
+                                        addToLists(l10nFile, dest, true);
+                                    }
+                                }
+                            }
+                        } // else some other file, not an asset
                     }
                 }
             }
