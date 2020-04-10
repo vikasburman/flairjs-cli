@@ -1,81 +1,53 @@
 const fsx = require('fs-extra');
-const path = require('path');
-const fg = require('fast-glob');
-const config = require('../../shared/options.js').config;
-
-const clientTestsExecution = (options, done) => {
-    // create temp spec runner
-    const runnerTemplate = require.resolve('flairjs-cli/cmd/test/jasmine/SpecRunner.html');
-    let tempDir = options.temp_dir;
-    let tempRunner = path.join(tempDir, 'specRunner.html');
-    fsx.ensureDirSync(tempDir);
-    fsx.copyFileSync(runnerTemplate, tempRunner);
-
-    // collect tests and helpers to include
-    let specDir = options.spec_dir,
-        relativePrefixBetweenSpecAndTempDir = options.relative_prefix,
-        helperGlobs = [],
-        specGlobs = [];
-    if (options.helpers) {
-        for(let file of options.helpers) {
-            helperGlobs.push(path.join(specDir, file));
-        }
-    }
-    if (options.spec_files) {
-        for(let file of options.spec_files) {
-            specGlobs.push(path.join(specDir, file));
-        }
-    }
-    let helpers = helperGlobs.length > 0 ? fg.sync(helperGlobs) : [];
-    let specs = specGlobs.length > 0 ? fg.sync(specGlobs) : [];
-
-    // write files in specRunner
-    let helpersScript = '',
-        specsScript = '',
-        tempRunnerHtml = fsx.readFileSync(tempRunner, 'utf8');
-    for(let file of helpers) {
-        helpersScript += `<script src="${relativePrefixBetweenSpecAndTempDir}${file}"></script>\n`;
-    }
-    for(let file of specs) {
-        specsScript += `<script src="${relativePrefixBetweenSpecAndTempDir}${file}"></script>\n`;
-    }
-    tempRunnerHtml = tempRunnerHtml.replace('<!-- helpers -->', helpersScript);
-    tempRunnerHtml = tempRunnerHtml.replace('<!-- specs -->', specsScript);
-    fsx.writeFileSync(tempRunner, tempRunnerHtml, 'utf8');
-
-    // open temp runner
-    const open = require('open');
-    open(tempRunner);
-    done();
-};
-const serverTestsExecution = (options, done) => {
-    const Jasmine = require('jasmine');
-    const jasmine = new Jasmine();
-    jasmine.loadConfig(options);
-    jasmine.onComplete(done);
-    jasmine.execute();  
-};
+const chalk = require('chalk');
+const getOptions = require('../shared/modules/get_cmd_options.js');
+const flairTest = require('./flairTest.js');
 
 // do
 const doTask = (argv, done) => {
+    // read command line options
+    let client = argv.client || false,                  // --client
+        forcedFullTest = argv.full,                     // --full
+        forcedQuickTest = argv.quick;                   // --quick
+        group = argv.group;                             // --group <groupName>
+        types = argv.types;                             // --types <typeName>,<typeName>
+        browser = argv.browser;                         // --browser <browserName>
+        suppressLogging = argv.nolog;                   // --nolog
+
     // get options
-    let options = config(argv.options, 'test'),
-        clientMode = argv.client || false;
+    let options = getOptions();
 
-    if (!options) {
-        console.log('Test options definition is not configured.');  // eslint-disable-line no-console
-        done(); return;
+    // set session mode and modify options for given mode
+    options.session.suppressLogging = (suppressLogging ? true : false);
+
+    // full, quick, group
+    if (forcedFullTest) { 
+        options.session.test.full = true;
     }
+    if (forcedQuickTest && !forcedFullTest) { 
+        options.session.test.quick = true;
+    }
+    if (!forcedFullTest && !forcedQuickTest && group) {
+        options.session.test.group = group;
+    }
+    if (!forcedFullTest && !forcedQuickTest && !group && types) {
+        options.session.test.types = types;
+    }    
 
-    // run jasmine tests
-    if (options.jasmine) {
-        let jasmineOptions = config(options, 'test', 'jasmine');
-        if (clientMode) {
-            clientTestsExecution(jasmineOptions, done);
-        } else {
-            serverTestsExecution(jasmineOptions, done);
+    // client mode
+    if (client) {
+        options.session.test.client = true;
+
+        // browser
+        if (browser) {
+            options.session.test.browser = browser;
         }
     }
+
+    // run test session
+    flairTest(options).catch((err) => {
+        options.logger(0, chalk.redBright('ABORT: ' + err + (err.line ? `\nfile: ${err.filename}\nline: ${err.line}\ncol: ${err.col}` : '')) + chalk.gray('\n' + err.stack));
+    }).finally(done);
 };
 
 exports.run = function(argv, cb) {

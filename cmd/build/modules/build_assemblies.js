@@ -7,10 +7,11 @@ const lint = require('./lint');
 const minify = require('./minify');
 const gzip = require('./gzip');
 const buildDocs = require('./build_docs');
+const buildTests = require('./build_tests');
 const runTasks = require('./run_tasks');
 const kinds = require('./kinds');
 
-// build assemblies and corrosponding docs
+// build assemblies, corrosponding docs and test fixture
 module.exports = async function(options) { 
     let profile, group, asm;
     options.logger(1, 'build'); 
@@ -18,6 +19,9 @@ module.exports = async function(options) {
 
     // start docs builder
     if (options.docs.perform) { await buildDocs.start(options); }
+
+    // start tests builder
+    if (options.tests.perform) { await buildTests.start(options); }    
 
     for(let profileName of options.build.profiles.list) {
         profile = options.profiles[profileName];
@@ -54,9 +58,12 @@ module.exports = async function(options) {
         }
     }
 
+    // finish writing tests
+    if (options.tests.perform) { await buildTests.finish(options); }   
+
     // finish writing docs
     if (options.docs.perform) { await buildDocs.finish(options); }
-
+   
     runTasks(options, 'post', 'top');
     options.logger(-1);
 };
@@ -648,6 +655,17 @@ const writeAssembly = async (options, asm) => {
             lintMinGzText += ' docs: ✔ '
         } catch (err) {
             options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' docs: ✘ '));
+            throw err;
+        }
+    }
+
+    // build tests
+    if (!asm.skipTests) {
+        try {
+            await buildTests.build(options, asm); 
+            lintMinGzText += ' tests: ✔ '
+        } catch (err) {
+            options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.keyword('limegreen')(lintMinGzText) + chalk.red(' tests: ✘ '));
             throw err;
         }
     }

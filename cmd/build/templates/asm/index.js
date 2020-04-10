@@ -34,13 +34,13 @@ const __internal = '<<internal_id>>';
 const Component = _.gr('<<asm>>');
 // #endregion ------------ 1 : KEYWORDS : END ----------------------- //
 
-// #region --------------- 2 : INJECTIONS : START ----------------------- //
+// #region --------------- 2 : INCLUDES : START ----------------------- //
 (()=> {
 /* eslint-disable */
-<<injections>>
+<<includes>>
 /* eslint-enable */
 })();
-// #endregion ------------ 2 : INJECTIONS : END ------------------------- //
+// #endregion ------------ 2 : INCLUDES : END ------------------------- //
 
 // #region --------------- 3 : GLOBALS : START ---------------------- //
 <<globals>>

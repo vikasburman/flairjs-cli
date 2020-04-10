@@ -10,7 +10,7 @@ module.exports = {
         // --nolog
         suppressLogging: false,
 
-        // build mode
+        // build
         build: {
             // if runs full-build
             // --full
@@ -23,6 +23,47 @@ module.exports = {
 
             // identifier flag: dev, prod, etc.
             flag: ''
+        },
+
+        // test
+        test: {
+            // if runs for client
+            // --client            
+            client: false,
+
+            // if to be executed for specific browser
+            browser: '',
+
+            // if runs full-test
+            // --full
+            full: false,
+
+            // if runs quick-test
+            // if both --full and --quick is given, this one is ignored
+            // --quick
+            quick: false,
+
+            // if not full and not quick, use group, if defined
+            group: '',
+
+            // if not full and not quick and not group, use types, if defined
+            // if types are also not defined, it will build types from coverage setting
+            types: ''
+        },
+
+        // docs
+        docs: {
+            // use this configured browser for serving docs
+            browser: ''
+        },
+
+        // serve
+        serve: {
+            // if process client (server for serving client root)
+            client: false,
+            
+            // if process server (server for serving server root)
+            server: false
         }
     },
 
@@ -168,6 +209,32 @@ module.exports = {
 
             // this is in context of l10n source itself
             dest: './template'
+        }
+    },
+
+    // browsers to use for various operations
+    // as per configuration of: https://www.npmjs.com/package/open
+    browsers: {
+        chrome: { cmd: 'google chrome' },
+        'chrome-private': { cmd: ['google chrome', '--incognito'] },
+        firefox: { cmd: 'firefox' },
+        safari: { cmd: 'safari' }
+    },
+
+    // serving configuration for debug purposes
+    debug: {
+        server: {
+            // in context of ./dest
+            root: './',
+            port: 8088,
+            enable: true
+        },
+
+        client: {
+            // in context of ./dest
+            root: './www',
+            port: 8080,
+            enable: true
         }
     },
 
@@ -780,6 +847,12 @@ module.exports = {
             content: 'content'
         },
 
+        // browser to use for docs display
+        browser: '',
+        
+        // port to use when serving docs for display
+        port: 8085,
+
         // google analytics id for tracking (if required)
         ga: '',
 
@@ -946,14 +1019,117 @@ module.exports = {
         customSymbols: ['component', 'para'] // TODO: remove these. keep it empty once files are fixed
     },
 
-    // test configuration
-    test: {
-        // master switch for test execution
-        perform: false,
+    // tests configuration
+    tests: {
+        // master switch for tests fixture generation
+        perform: true,
 
-        // test command to execute
-        // TODO: 
-        cmd: 'yarn test',
+        // path where fixture files are created
+        // during build process
+        dest: './tests',
+
+        // default tests coverage
+        coverage: {
+            // code: involving one item (globals, components, types) in one spec
+            // focus: input/output, logic, edge conditions, etc.
+            // nature: technical
+            // location: asm/[globals|components|types]/*/*.spec.js
+            // output: ./tests/specs/asm/units.specs.js
+            unit: true,
+            
+            // features: involving more than one items (globals, components, types of same assembly) in one spec
+            // focus: interface, cross-item logic, data input/output, etc. (within same assembly)
+            // nature: technical + functional logic
+            // location: asm/tests/specs/*
+            // output: ./tests/specs/asm/func.specs.js
+            func: true,
+
+            // integrations: involving more than one items (globals, components, types of multiple assemblies) in one spec
+            // focus: interface, cross-item logic, data input/output, etc. (across assemblies or external javascript libraries, etc.)
+            // nature: technical
+            // location: ./src/tests/specs/integration/*/*.spec.js
+            // output: ./tests/specs/integration.specs.js
+            integration: true,
+
+            // non-functional aspects: involving one/more items (globals, components, types of one/multiple assemblies) in one spec
+            // focus: related to performance, security, browser/device compatability, i18n, usability, etc.
+            // nature: technical (aligning to functional needs)
+            // location: ./src/tests/specs/nonfunc/*/*.spec.js
+            // output: ./tests/specs/nonfunc.specs.js
+            nonfunc: true,
+
+            // functionalities: involving more than one items (globals, components, types of one/multiple assemblies) in one spec
+            // focus: system functionalities as per business need of the system (without considering user flows)
+            // nature: functional
+            // location: ./src/tests/specs/system/*/*.spec.js
+            // output: ./tests/specs/system.specs.js
+            system: true,
+
+            // user-flows: involving more than one items (globals, components, types of one/multiple assemblies) in one spec
+            // focus: user stories as per business need of the system (considering user workflows)
+            // nature: functional
+            // location: ./src/tests/specs/e2e/*/*.spec.js
+            // output: ./tests/specs/e2e.specs.js
+            e2e: true
+        },
+
+        // test specs file names can be defined as
+        // [name[-group1[-group2[-groupN]]].spec.js
+        // one ./tests/specs/{groupName}.specs.js file will be created for each group, including only those specs which have
+        // the '-{groupName}' in their filename
+        groups: [
+            'smoke', 
+            'regression'
+        ],
+
+        // list of files (scripts) to load before running any tests
+        // these are more for environmental setup, e.g., loading flairjs itself
+        // this should define the file paths in context of ./dest root, not in context of project root
+        // env can be defined differntly when running in client (browser) or server (node) mode
+        env: {
+            server: [],
+            client: []
+        },
+
+        // browser to test on
+        // if not defined, it will open default browser or the one passed from --browser arg
+        // the name must match to what browsers are configured above
+        browser: '',
+
+        // port where to run test on browser
+        // http://localhost:8090
+        port: '8090',
+
+        // reporting formats
+        reporters: {
+            inbuilt: {
+                enable: false,
+            },
+            
+            console: {
+                enable: true,
+
+                // as per: https://www.npmjs.com/package/jasmine-console-reporter
+                config: require('./test/options/json-reporter.json')
+            },
+
+            html: {
+                enable: false,
+
+                // as per: https://www.npmjs.com/package/protractor-jasmine2-html-reporter
+                config: require('./test/options/html-reporter.json')
+            },
+
+            json: {
+                enable: false,
+
+                // as per: https://www.npmjs.com/package/jasmine-json-test-reporter
+                config: require('./test/options/json-reporter.json')
+            }
+        },
+
+        // wildcards for assembly names for which tests is not to be processed
+        exclude: [],
 
         // test config settings
         config: require('./test/options/test.json')

@@ -460,6 +460,7 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
     //     skipPreamble: t/f,
     //     skipBuild: t/f
     //     skipDocs: t/f,
+    //     skipTests: t/f,
     //     asyncTypeLoading: t/f,
     //     src: '',
     //     skipLint: t/f
@@ -540,8 +541,9 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
     asm.dest.lupdate = fsx.existsSync(asm.dest.file) ? fsx.statSync(asm.dest.file).mtime : null;
     asm.dest.adoCache = (options.build.useCache ? pathJoin(options.build.cache, profile.name, group.name, asmName) + '.json' : '');
 
-    // .skipDocs
+    // .skipDocs, .skipTests
     asm.skipDocs = !options.docs.perform || wildcards.isMatchAny(asmName, options.docs.exclude);
+    asm.skipTests = !options.tests.perform || wildcards.isMatchAny(asmName, options.tests.exclude);
 
     // .skipPreamble
     asm.skipPreamble = wildcards.isMatchAny(asmName, profileConfig.preamble.exclude);
@@ -631,7 +633,7 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
                       asm.types.length + asm.resources.length + 
                       asm.ado.ns.length + asm.ado.ro.length + 
                       (asm.files.main ? 1 : 0) + (asm.files.settings ? 1 : 0) + (asm.files.config ? 1 : 0) + (asm.files.routes ? 1 : 0);
-        if ((!asm.skipDocs)) { asm.members += '+'; }
+        if ((!asm.skipDocs || !asm.skipTests)) { asm.members += '+'; }
 
         // .content
         asm.content = ''; // will be loaded when built

@@ -1,0 +1,16 @@
+{
+    "savePath": "",
+    "screenshotsFolder": "screenshots",
+    "fileName": "",
+    "fileNamePrefix": "",
+    "fileNameSuffix": "",
+    "fileNameSeparator": "-",
+    "fileNameDateSuffix": false,
+    "takeScreenshots": true,
+    "takeScreenshotsOnlyOnFailures": true,
+    "fixedScreenshotName": true,
+    "consolidate": false,
+    "consolidateAll": false,
+    "cleanDestination": true,
+    "showPassed": true
+}

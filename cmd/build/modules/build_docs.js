@@ -1567,7 +1567,7 @@ const writeEngine = async (options) => {
     // copy flairDocs.js at root as flairDocs.min.js
     let flairDocs = pathJoin(engineRoot, 'js', 'flairDocs.js'),
         content = fsx.readFileSync(flairDocs, 'utf8');
-    minifiedContent = await minify.jsContent(options, content);
+    let minifiedContent = await minify.jsContent(options, content);
     fsx.writeFileSync(pathJoin(options.docs.dest.root, 'engine', 'js', 'flairDocs.js'), content, 'utf8');
     fsx.writeFileSync(pathJoin(options.docs.dest.root, 'engine', 'js', 'flairDocs.min.js'), minifiedContent.code, 'utf8');
 
@@ -1727,13 +1727,13 @@ const writeDocs = async (options) => {
     plainWrite(options, file, data);
 };
 const writeL10NTemplate = async (options) => {
-    const copyFolder = (src, dest) => {
+    const copyFolder = (src, dest, fn) => {
         fsx.ensureDirSync(dest);
-        copyDir.sync(src, dest, {
-            utimes: true,
-            mode: true,
-            cover: true
-        });
+        if (fn) {
+            copyDir.sync(src, dest, { utimes: true, mode: true, cover: true, filter: fn });
+        } else {
+            copyDir.sync(src, dest, { utimes: true, mode: true, cover: true });
+        }
     };
     const copyFiles = (files, destRoot, isWriteDocs) => {
         let l10nFileTemplate = '';
@@ -1757,10 +1757,33 @@ const writeL10NTemplate = async (options) => {
         fsx.ensureDirSync(templateDest);
 
         if (options.docs.l10n.perform) { // applicable only when docs' localization is being done
-            // copy whole docs folder as it, because all pages, guides and info files 
-            // needs to be localized
+            // copy all ($).*, *.md and *.info files from docs folder as it, because pages html, css etc. (via ($)), 
+            // guides (*.md) and info (*.info) files needs to be localized. 
             l10nFolder = pathJoin(options.build.src, 'docs');
-            if (fsx.existsSync(l10nFolder)) { copyFolder(l10nFolder, pathJoin(templateDest, 'docs')); }
+            if (fsx.existsSync(l10nFolder)) { 
+                
+                copyFolder(l10nFolder, pathJoin(templateDest, 'docs'), (stat, filepath) => {
+                    // copy only localizable files which are:
+                    // *.info, *.md and any files that starts with ($).
+                    if(stat === 'file') {
+                        if (['.info', '.md'].indexOf(path.extname(filepath)) !== -1) {
+                            return true;
+                        } else if (path.basename(filepath).startsWith('($).')) {
+                            // note: this manual process of handling ($). is done here like this because
+                            // unlike all other placed, here we are not dealing with output of getFiles()
+                            // and also isL10n is never set for files in docs folder, because these are not
+                            // namespaced files.
+                            let destFile = ('./' + filepath).replace(l10nFolder, pathJoin(templateDest, 'docs')).replace('($).', '');
+                            fsx.ensureDirSync(path.dirname(destFile));
+                            fsx.copyFileSync(filepath, destFile);
+                            return false; // since copied here
+                        } else { // any other file
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+            }
         }
 
         // copy assembly specific stuff
@@ -2058,6 +2081,18 @@ const getPages = (options) => {
     return data;
 };
 const writePages = (options) => {
+    const getFile = (srcPath, srcFile) => {
+        if (!fsx.existsSync(pathJoin(srcPath, srcFile))) { 
+            if (srcFile.startsWith('($).')) {
+                srcFile = srcFile.substr(4); // remove
+            } else {
+                srcFile = '($).' + srcFile; // add
+            }
+            if (!fsx.existsSync(pathJoin(srcPath, srcFile))) { return ''; }
+        }
+        return pathJoin(srcPath, srcFile);
+    };
+
     // data
     let packageData = options.docs.temp.json,
         data = packageData.pages,
@@ -2075,16 +2110,16 @@ const writePages = (options) => {
             items = [];
         for(let item of data.items) {
             // validate
-            htmlFile = pathJoin(options.build.src, 'docs', 'pages', item.name, 'index.html');
-            if (!fsx.existsSync(htmlFile)) { throw `Page not found. (${item.name})`; }
+            htmlFile = getFile(pathJoin(options.build.src, 'docs', 'pages', item.name), 'index.html');
+            if (!htmlFile) { throw `Page not found. (${item.name})`; }
             
             // load content of whole html, associated js and css
-            // for any required images etc, either put in root docs folder or embedd using css techniques
+            // for any required images etc, embedd using css techniques
             item.html = fsx.readFileSync(htmlFile, 'utf8');
-            jsFile = htmlFile.replace('.html', '.js');
-            if (!fsx.existsSync(jsFile)) { item.js = fsx.readFileSync(jsFile, 'utf8'); }
-            cssFile = htmlFile.replace('.html', '.css');
-            if (!fsx.existsSync(cssFile)) { item.css = fsx.readFileSync(cssFile, 'utf8'); }
+            jsFile = getFile(pathJoin(options.build.src, 'docs', 'pages', item.name), 'index.js');
+            if (jsFile) { item.js = fsx.readFileSync(jsFile, 'utf8'); }
+            cssFile = getFile(pathJoin(options.build.src, 'docs', 'pages', item.name), 'index.css');
+            if (cssFile) { item.css = fsx.readFileSync(cssFile, 'utf8'); }
 
             // item's items
             addToItems(options, items, item, item.group); // pages can be grouped using @group symbol

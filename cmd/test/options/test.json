@@ -1,14 +1,9 @@
 {
-    "temp_dir": "./temp",
-    "spec_dir": "./test",
-    "relative_prefix": "../",
-    "spec_files": [
-        "specs/**/*.spec.js"
-    ],
-    "helpers": [
-        "helpers/**/*.js"
-    ],
+    "spec_dir": "",
+    "helpers": [],
+    "spec_files": [],
     "stopSpecOnExpectationFailure": true,
-    "stopOnSpecFailure": true,
-    "random": false
+    "stopOnSpecFailure": false,
+    "random": false,
+    "seed": 86874
 }

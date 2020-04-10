@@ -6,10 +6,10 @@ const flairBuild = require('./flairBuild.js');
 // do
 const doTask = (argv, done) => {
     // read command line options
-    let flag = argv.flag || '',         // 
-        forcedFullBuild = argv.full,    // --full
-        forcedQuickBuild = argv.quick;  // --quick
-        suppressLogging = argv.nolog    // --nolog
+    let flag = argv.flag || '',          // 
+        forcedFullBuild = argv.full;     // --full
+        forcedQuickBuild = argv.quick;   // --quick
+        suppressLogging = argv.nolog;    // --nolog
 
     // get options
     let options = getOptions();
@@ -40,6 +40,7 @@ const doTask = (argv, done) => {
         options.assets.gzip = true; 
         options.l10n.perform = false;
         options.docs.perform = false;
+        options.tests.perform = false;
         options.pack.perform = false;
     }
     if (flag) {
