@@ -8,9 +8,9 @@ const replaceAll = require('../../shared/modules/replace_all');
 const MiniSearch = require('minisearch');
 const copyDir = require('copy-dir');
 const minify = require('./minify');
-const getFolders = require('../../shared/modules/get_folders');
 const deepMerge = require('../../shared/modules/merge_objects');
 const kinds = require('./kinds');
+const wildcards = require('../../shared/modules/wildcard_match');
 
 // generation steps
 exports.start = async (options) => {
@@ -55,7 +55,8 @@ exports.finish = async (options) => {
     // run for each locale again
     if (options.l10n.perform && options.docs.l10n.perform) { // only when master l10n an docs l10n is configured
         let locSrc = getDest(options),
-            locDest = '';
+            locDest = '',
+            excludes = [...options.general.ignoreFilesFolders];
         for(let locale of options.l10n.current) {
             if (locale !== options.l10n.default) { // skip for default, which is already written
                 // use only if this locale is configured for documents generation
@@ -72,7 +73,12 @@ exports.finish = async (options) => {
                     copyDir.sync(locSrc, locDest, {
                         utimes: true,
                         mode: true,
-                        cover: true
+                        cover: true,
+                        filter: (stat, filepath) => {
+                            if (wildcards.isMatchAny(filepath, excludes)) { return false; }
+                            if (wildcards.isMatchAny(path.basename(filepath), excludes)) { return false; }
+                            return true;
+                        }                
                     });
                 }
 
@@ -298,6 +304,7 @@ const extractSymbols = (options, name, block) => {
     //  @type
     // 
     // Type 2: @<symbol> value
+    //  @js <type>
     //  @desc <desc>
     //  @extends <class-type>
     //  @deprecated <desc>
@@ -347,7 +354,7 @@ const extractSymbols = (options, name, block) => {
         isIgnoreBlock = false,
         symbols = {},
         type1 = ['type', 'flags', 'public', 'private', 'protected', 'internal', 'abstract', 'virtual', 'override', 'sealed', 'overload', 'optional', 'beta', 'static', 'async', 'generator', 'readonly', 'ignore'],
-        type2 = ['desc', 'extends', 'deprecated', 'restricted', 'since', 'see', 'fiddle', 'group', 'link'],
+        type2 = ['js', 'desc', 'extends', 'deprecated', 'restricted', 'since', 'see', 'fiddle', 'group', 'link'],
         type3 = ['mixes', 'implements', 'conditional'],
         type4 = ['returns', 'yields', 'throws', 'resolves'],
         type5 = ['param', 'prop', 'const'],
@@ -381,7 +388,7 @@ const extractSymbols = (options, name, block) => {
 
                 // multi instance error check
                 if (symbols[symbol] && multiInstance.indexOf(symbol) === -1) {
-                    throw `Multiple instances of @${symbol} are not allowed. (${name}: ${block})`;
+                    throw new Error(`Multiple instances of @${symbol} are not allowed. (${name}: ${block})`);
                 }
 
                 // get symbol data
@@ -437,7 +444,7 @@ const extractSymbols = (options, name, block) => {
                     if (options.docs.customSymbols.indexOf(symbol) !== -1) {
                         isIgnore = true;
                     } else {
-                        throw `Documentation symbol '${symbol}' not supported. (${name})`;
+                        throw new Error(`Documentation symbol '${symbol}' not supported. (${name})`);
                     }
                 }
 
@@ -461,10 +468,11 @@ const extractSymbols = (options, name, block) => {
 const Annotation = function(symbols, kind, name) {
     // All Known Symbols
     /** 
-     * @type <name> - <desc> | @func <name> - <desc> | @prop {<type>} name - <desc> | @const {<value>} name - <desc> | @event <name> - <desc> | @item name - <desc>
+     * @type | @func <name> - <desc> | @prop {<type>} name - <desc> | @const {<value>} name - <desc> | @event <name> - <desc> | @item name - <desc>
      * @group <group-name>
      * @link <link>
-     * @desc <desc>                                             
+     * @desc <desc>      
+     * @js <type>
      * @public | @private | @protected | @internal  
      * @abstract | @virtual | @override | @sealed                           
      * @overload                                                           
@@ -539,7 +547,7 @@ const Annotation = function(symbols, kind, name) {
     //          asmMemberType/collectionMemberType:  
     //          - can be omitted, if referred member is a 'type'
     //          - can be 'globals', 'components', 'namespaces', 'types', 'settings', 'config', 'resources', 'routes', 'assets', 'libs', 'locales',
-    //            'api', 'guides', 'examples', 'pages'
+    //            'api', 'guides', 'examples', 'pages', 'objects'
     //          asmMemberName/collectionMemberName:
     //          - if not defined, it will refer to the list page of asmMemberType
     //          - when, defined should be qualified name
@@ -590,31 +598,35 @@ const Annotation = function(symbols, kind, name) {
         }
     };
     const defineParamsSignatureAndOverload = () => {
-        let _params = symbols['param'] || [],
-            p = null;
-        for(let _p of _params) { // [ { type, name, desc } ]
-            p = { 
-                type: md2html(_p[0] || ''), 
-                name: _p[1] || '', 
-                desc: md2html(_p[2] || ''),
-                remarks: md2html(_p[3] || '')
-            };
-            if (!p.type) { throw `Param type must be defined at @param symbol. (${ano.name})`; }
-            if (!p.name) { throw `Param name must be defined at @param symbol. (${ano.name})`; }
-            if (ano.params.findIndex(a => a.name === p.name) !== -1) { throw `Duplicate param names (${p.name}) are not allowed at @param symbol. (${ano.name})`; }
-            ano.params.push(p);
-        }
-
-        // signature
-        let signatureTypesList = '';
-        if (ano.params && ano.params.length > 0) {
-            for(let p of ano.params) {
-                if (signatureTypesList) { signatureTypesList += ', '; }
-                signatureTypesList += p.type;
+        if (typeof ano.params !== 'undefined') {
+            let _params = symbols['param'] || [],
+                p = null;
+            for(let _p of _params) { // [ { type, name, desc } ]
+                p = { 
+                    type: md2html(_p[0] || ''), 
+                    name: _p[1] || '', 
+                    desc: md2html(_p[2] || ''),
+                    remarks: md2html(_p[3] || '')
+                };
+                if (!p.type) { throw  new Error(`Param type must be defined at @param symbol. (${ano.name})`); }
+                if (!p.name) { throw  new Error(`Param name must be defined at @param symbol. (${ano.name})`); }
+                if (ano.params.findIndex(a => a.name === p.name) !== -1) { throw  new Error(`Duplicate param names (${p.name}) are not allowed at @param symbol. (${ano.name})`); }
+                ano.params.push(p);
             }
-            ano.signature = `${ano.name}(${signatureTypesList})`;
-        } else {
-            ano.signature = `${ano.name}()`;
+
+            // signature
+            if (typeof ano.signature !== 'undefined') {
+                let signatureTypesList = '';
+                if (ano.params.length > 0) {
+                    for(let p of ano.params) {
+                        if (signatureTypesList) { signatureTypesList += ', '; }
+                        signatureTypesList += p.type;
+                    }
+                    ano.signature = `${ano.name}(${signatureTypesList})`;
+                } else {
+                    ano.signature = `${ano.name}()`;
+                }
+            }
         }
 
         // overload
@@ -636,31 +648,33 @@ const Annotation = function(symbols, kind, name) {
     };
     const defineReturnsYieldsResolvesAndThrows = () => {
         // returns
-        if ([kinds.event, kinds.annotation].indexOf(ano.kind) !== -1) {
-            ano.returns = null;
-        } else {
-            if (symbols['returns']) { 
-                ano.returns = {
-                    type: md2html(symbols['returns'][0] || ''),
-                    desc: md2html(symbols['returns'][1]  || ''),
-                    remarks: md2html(symbols['returns'][2]  || '')
-                };
-                if (!ano.returns.type) { throw `Return type must be defined at @returns symbol. It can be omitted altogether, if there is no return value. (${ano.name})`; }
-            } else {
+        if (typeof ano.returns !== 'undefined') {
+            if ([kinds.event, kinds.annotation].indexOf(ano.kind) !== -1) {
                 ano.returns = null;
+            } else {
+                if (symbols['returns']) { 
+                    ano.returns = {
+                        type: md2html(symbols['returns'][0] || ''),
+                        desc: md2html(symbols['returns'][1]  || ''),
+                        remarks: md2html(symbols['returns'][2]  || '')
+                    };
+                    if (!ano.returns.type) { throw new Error(`Return type must be defined at @returns symbol. It can be omitted altogether, if there is no return value. (${ano.name})`); }
+                } else {
+                    ano.returns = null;
+                }
             }
         }
 
         // yields
         if (typeof ano.generator !== 'undefined') {
             if (ano.generator) {
-                if (!symbols['yields']) { throw `@yields must be defined for a generator function. (${ano.name})`; }
+                if (!symbols['yields']) { throw new Error(`@yields must be defined for a generator function. (${ano.name})`); }
                 ano.yields = {
                     type: md2html(symbols['yields'][0] || ''),
                     desc: md2html(symbols['yields'][1] || ''),
                     remarks: md2html(symbols['yields'][2] || '')
                 };
-                if (!ano.yields.type) { throw `Yield type must be defined at @yields symbol. (${ano.name})`; }
+                if (!ano.yields.type) { throw new Error(`Yield type must be defined at @yields symbol. (${ano.name})`); }
             } else {
                 delete ano.yields;
             }
@@ -669,29 +683,31 @@ const Annotation = function(symbols, kind, name) {
         // resolves
         if (typeof ano.async !== 'undefined') {
             if (ano.async) {
-                if (!symbols['resolves']) { throw `@resolves must be defined for an async function. (${ano.name})`; }
+                if (!symbols['resolves']) { throw new Error(`@resolves must be defined for an async function. (${ano.name})`); }
                 ano.resolves = {
                     type: md2html(symbols['resolves'][0] || ''),
                     desc: md2html(symbols['resolves'][1] || ''),
                     remarks: md2html(symbols['resolves'][2] || '')
                 };
-                if (!ano.resolves.type) { throw `Resolve type must be defined at @resolves symbol. (${ano.name})`; }
+                if (!ano.resolves.type) { throw new Error(`Resolve type must be defined at @resolves symbol. (${ano.name})`); }
             } else {
                 delete ano.resolves;
             }
         }
 
         // throws
-        let _throws = symbols['throws'] || [], // { type, desc }
-            e = null;
-        if (_throws.length > 0) {
-            for(let _e of _throws) { // [ [type, desc] ]
-                e = { 
-                    type: md2html(_e[0] || ''), 
-                    desc: md2html(_e[1] || '')
-                };
-                if (!e.type) { throw `Exception type must be defined at @throws symbol. (${ano.name})`; }
-                ano.throws.push(e);
+        if (typeof ano.throws !== 'undefined') {
+            let _throws = symbols['throws'] || [], // { type, desc }
+                e = null;
+            if (_throws.length > 0) {
+                for(let _e of _throws) { // [ [type, desc] ]
+                    e = { 
+                        type: md2html(_e[0] || ''), 
+                        desc: md2html(_e[1] || '')
+                    };
+                    if (!e.type) { throw new Error(`Exception type must be defined at @throws symbol. (${ano.name})`); }
+                    ano.throws.push(e);
+                }
             }
         }
     };
@@ -736,7 +752,7 @@ const Annotation = function(symbols, kind, name) {
     } else if ([kinds.globals, kinds.components, kinds.types].indexOf(kind) !== -1) {
         // items
         ano.items = [];
-    } else if ([kinds.global, kinds.component, kinds.annotation].indexOf(kind) !== -1) {
+    } else if ([kinds.object, kinds.global, kinds.component, kinds.annotation].indexOf(kind) !== -1) {
         // common for all main types (class, struct, enum, mixin, interface)
         /** 
          * @public | @internal
@@ -747,29 +763,58 @@ const Annotation = function(symbols, kind, name) {
 
         // kind specific
         switch(kind) {
+            case kinds.object:
             case kinds.global:
             case kinds.component: 
-                // NOTE: same both for global and component kinds
+                // NOTE: same for object, global and component kinds
                 /** 
+                 * @js <type>
                  * @async
                  * @generator  
-                 * @param {<type>} <name> - <desc>                                      
+                 * @param {<type>} <name> - <desc>                              
                  * @returns {<type>} <desc>
                  * @resolves {<type>} <desc>
-                 * @yields {<type>} <desc>    
+                 * @yields {<type>} <desc>
                  * @throws {<type>} <desc> 
                 */
-                ano.async = false;
-                ano.generator = false;
-                ano.params = [];
-                ano.signature = '';
-                ano.returns = {};
-                ano.resolves = {};
-                ano.yields = {};
-                ano.throws = [];
-                defineParamsSignatureAndOverload();
-                defineASyncAndGenerator();
-                defineReturnsYieldsResolvesAndThrows();
+                ano.jsType = symbols['js'] || '';
+                if (['function', 'constructor', 'class'].indexOf(ano.jsType) !== -1) {
+                    ano.params = [];
+                    ano.signature = '';
+                    ano.throws = [];
+                    
+                    if (ano.jsType === 'function') { // only when it is a function (and not a constructor/class)
+                        ano.async = false;
+                        ano.generator = false;
+                        ano.returns = {};
+                        ano.resolves = {};
+                        ano.yields = {};
+                    }
+                    defineParamsSignatureAndOverload();
+                    defineASyncAndGenerator();
+                    defineReturnsYieldsResolvesAndThrows();
+
+                    if (ano.jsType === 'class') {
+                        /** 
+                         * @extends <jsclass-type>                                    
+                         * @mixes <jsmixin-type>, <jsmixin-type>, ...                   <-- more symbolic, than actual
+                         * @implements <jsinterface-type>, <jsinterface-type>, ...      <-- more symbolic, than actual
+                        */                        
+
+                        // ns, justName
+                        ano.ns = '';
+                        ano.justName = name;
+
+                        ano.modifiers = []; // define for UI consistency, but don't call defineModifiers() to actually define it, as those are not applicable here
+                        ano.static = false;
+                        ano.extends = symbols['extends'] || '';
+                        ano.mixes = symbols['mixes'] || [];
+                        ano.implements = symbols['implements'] || [];
+                    }
+                } else {
+                    // assume its as object
+                    ano.jsType = 'object';
+                }
                 break;                
             case kinds.annotation:
                 /** 
@@ -867,7 +912,7 @@ const Annotation = function(symbols, kind, name) {
                  * @const {<type>} name - <desc>
                 */                  
                 ano.type = md2html(symbols['const'][0] || 'object');
-                ano.name = symbols['const'][1]; if(!ano.name) { throw `Constant name must be defined at @const symbol.`; }
+                ano.name = symbols['const'][1]; if(!ano.name) { throw new Error(`Constant name must be defined at @const symbol.`); }
                 ano.desc = md2html((symbols['const'][2] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
                 break;                
             case kinds.property:
@@ -876,7 +921,7 @@ const Annotation = function(symbols, kind, name) {
                  * @readonly                                                           
                 */                  
                 ano.type = md2html(symbols['prop'][0] || 'object');
-                ano.name = symbols['prop'][1]; if(!ano.name) { throw `Property name must be defined at @prop symbol.`; }
+                ano.name = symbols['prop'][1]; if(!ano.name) { throw new Error(`Property name must be defined at @prop symbol.`); }
                 ano.desc = md2html((symbols['prop'][2] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
                 break;
             case kinds.method:
@@ -890,7 +935,7 @@ const Annotation = function(symbols, kind, name) {
                  * @yields {<type>} <desc>    
                  * @throws {<type>} <desc> 
                 */                  
-                ano.name = symbols['func'][0]; if(!ano.name) { throw `Function (method) name must be defined at @func symbol.`; }
+                ano.name = symbols['func'][0]; if(!ano.name) { throw new Error(`Function (method) name must be defined at @func symbol.`); }
                 ano.desc = md2html((symbols['func'][1] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
                 ano.isConstructor = (ano.name === 'construct');
                 ano.isDestructor = (ano.name === 'dispose');
@@ -914,7 +959,7 @@ const Annotation = function(symbols, kind, name) {
                  * @param {<type>} <name> - <desc>   
                  * @throws {<type>} <desc>                                    
                 */  
-                ano.name = symbols['event'][0]; if(!ano.name) { throw `Event name must be defined at @event symbol.`; }
+                ano.name = symbols['event'][0]; if(!ano.name) { throw new Error(`Event name must be defined at @event symbol.`); }
                 ano.desc = md2html((symbols['event'][1] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
                 ano.params = []; 
                 ano.signature = '';
@@ -923,7 +968,7 @@ const Annotation = function(symbols, kind, name) {
                 defineReturnsYieldsResolvesAndThrows();     
                 break;
         }
-    } else if ([kinds.guides, kinds.examples, kinds.pages, kinds.namespaces, kinds.routes, kinds.assets, kinds.resources, kinds.libs, kinds.configs, kinds.settings].indexOf(kind) !== -1) {
+    } else if ([kinds.guides, kinds.examples, kinds.pages, kinds.objects, kinds.namespaces, kinds.routes, kinds.assets, kinds.resources, kinds.libs, kinds.configs, kinds.settings].indexOf(kind) !== -1) {
         // items
         ano.items = [];
 
@@ -932,6 +977,7 @@ const Annotation = function(symbols, kind, name) {
             case kinds.guides: ano.itemKind = kinds.guide; break;
             case kinds.examples: ano.itemKind = kinds.example; break;
             case kinds.pages: ano.itemKind = kinds.page; break;
+            case kinds.objects: ano.itemKind = kinds.objectItem; break;
             case kinds.namespaces: ano.itemKind = kinds.namespace; break; 
             case kinds.routes: ano.itemKind = kinds.route; break; 
             case kinds.assets: ano.itemKind = kinds.asset; break;
@@ -940,13 +986,13 @@ const Annotation = function(symbols, kind, name) {
             case kinds.configs: ano.itemKind = kinds.config; break;
             case kinds.settings: ano.itemKind = kinds.setting; break;
         }
-    } else if ([kinds.guide, kinds.example, kinds.page, kinds.namespace, kinds.route, kinds.asset, kinds.resource, kinds.lib, kinds.config, kinds.setting].indexOf(kind) !== -1) {
+    } else if ([kinds.guide, kinds.example, kinds.page, kinds.objectItem, kinds.namespace, kinds.route, kinds.asset, kinds.resource, kinds.lib, kinds.config, kinds.setting].indexOf(kind) !== -1) {
         /** 
          * @item name - <desc>
          * @group <group-name>
          * @link <link>
-        */                  
-        ano.name = symbols['item'][0]; if(!ano.name) { throw `Item name must be defined at @item symbol.`; }
+        */
+        ano.name = symbols['item'][0]; if(!ano.name) { throw new Error(`Item name must be defined at @item symbol.`); }
         ano.desc = md2html((symbols['item'][1] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
         ano.group = symbols['group'] || '';
         ano.link = symbols['link'] || '';
@@ -983,8 +1029,8 @@ const Annotation = function(symbols, kind, name) {
 const symbolsToAnnotation = (symbols, kind, name) => {
     let annotation = null;
     if (symbols['type']) {
-        if (!name) { throw `Name must be provided for type.`; }
-        if (!kind) { throw `Specific kind must be provided. (${name})`; }
+        if (!name) { throw new Error(`Name must be provided for type.`); }
+        if (!kind) { throw new Error(`Specific kind must be provided. (${name})`); }
         annotation = new Annotation(symbols, kind, name);
     } else if (symbols['const']) {
         annotation = new Annotation(symbols, kinds.constant);
@@ -995,7 +1041,7 @@ const symbolsToAnnotation = (symbols, kind, name) => {
     } else if (symbols['event']) {
         annotation = new Annotation(symbols, kinds.event);
     } else if (symbols['item']) {
-        if (!kind) { throw `Specific kind must be provided for item.`; }
+        if (!kind) { throw new Error(`Specific kind must be provided for item.`); }
         annotation = new Annotation(symbols, kind);
     } else {
         // ignore the block
@@ -1038,7 +1084,8 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
             case kinds.guides:
             case kinds.examples:
             case kinds.pages:
-                item.docs.self = `${item.kind}`; // /api, /guides, /examples, /pages
+            case kinds.objects:
+                item.docs.self = `${item.kind}`; // /api, /guides, /examples, /pages, /objects
                 item.docs.members = item.docs.self;
                 break;
             case kinds.constant:
@@ -1048,6 +1095,7 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
             case kinds.guide:
             case kinds.example:
             case kinds.page:
+            case kinds.objectItem:
             case kinds.route:
             case kinds.asset:
             case kinds.resource:
@@ -1061,7 +1109,7 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
                 if (item.kind === kinds.method && item.overload && item.overloadId) { item.docs.self += '~' + item.overloadId; }
                 break;
             case kinds.namespace:
-                item.docs.parent.name = parent.memberType;
+                item.docs.parent.name = parent.name;
                 item.docs.parent.link = parent.docs.self;
                 item.docs.self = `${parent.docs.members}/${item.name}`;  
                 item.docs.members = `${asm.name}/${kinds.types}`; // namespase members are inside types (same as below)     
@@ -1078,8 +1126,9 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
                 break;
             case kinds.component:
             case kinds.annotation:
+            case kinds.object:
             case kinds.global:
-                item.docs.parent.name = parent.memberType;
+                item.docs.parent.name = parent.name;
                 item.docs.parent.link = parent.docs.self;
                 item.docs.self = `${parent.docs.members}/${item.name}`;
                 item.docs.members = item.docs.self;
@@ -1098,7 +1147,7 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
                 item.docs.members = item.docs.self;
                 break;
             default:
-                throw `Unknown type '${item.kind}'. (${item.name})`;
+                throw new Error(`Unknown type '${item.kind}'. (${item.name})`);
                 break;
         }
 
@@ -1157,14 +1206,14 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
                 case kinds.annotation:
                 case kinds.global:
                     // scope: always 'public'
-                    if (item.scope !== 'public') { throw `Defined member scope is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.scope !== 'public') { throw new Error(`Defined member scope is not supported in this type. (${data.name}.${item.name})`); }
 
                     // static: always 'true'
                     if (!item.static) { item.static = true; }
                     break;
                 case kinds.struct:
                     // scope: always 'public'
-                    if (item.scope !== 'public') { throw `Defined member scope is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.scope !== 'public') { throw new Error(`Defined member scope is not supported in this type. (${data.name}.${item.name})`); }
                     break;
                 case kinds.class:
                 case kinds.mixin:
@@ -1192,42 +1241,42 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
                 case kinds.annotation: 
                 case kinds.global:
                     // scope: always 'public'
-                    if (item.scope !== 'public') { throw `Defined member scope is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.scope !== 'public') { throw new Error(`Defined member scope is not supported in this type. (${data.name}.${item.name})`); }
 
                     // static: always 'true'
                     if (!item.static) { item.static = true; }
 
                     // modifiers: only readonly can be defined
-                    if (item.modifiers.length !== 0 && item.modifiers[0] !== 'readonly') { throw `Modifiers are not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.modifiers.length !== 0 && item.modifiers[0] !== 'readonly') { throw new Error(`Modifiers are not supported in this type. (${data.name}.${item.name})`); }
 
                     // optional: not supported
-                    if (item.optional) { throw `Optional member definition is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.optional) { throw new Error(`Optional member definition is not supported in this type. (${data.name}.${item.name})`); }
 
                     // conditional: not supported
-                    if (item.conditional.length !== 0) { throw `Conditional member definition is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.conditional.length !== 0) { throw new Error(`Conditional member definition is not supported in this type. (${data.name}.${item.name})`); }
                     break;
                 case kinds.struct:
                     // scope: only public/private
-                    if (item.scope !== 'public' && item.scope !== 'private') { throw `Defined member scope is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.scope !== 'public' && item.scope !== 'private') { throw new Error(`Defined member scope is not supported in this type. (${data.name}.${item.name})`); }
 
                     // modifiers: only readonly can be defined
-                    if (item.modifiers.length !== 0 && item.modifiers[0] !== 'readonly') { throw `Modifiers are not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.modifiers.length !== 0 && item.modifiers[0] !== 'readonly') { throw new Error(`Modifiers are not supported in this type. (${data.name}.${item.name})`); }
                     break;
                 case kinds.interface:
                     // scope: always 'public'
-                    if (item.scope !== 'public') { throw `Defined member scope is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.scope !== 'public') { throw new Error(`Defined member scope is not supported in this type. (${data.name}.${item.name})`); }
 
                     // static: not supported
-                    if (item.static) { throw `Static member definition is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.static) { throw new Error(`Static member definition is not supported in this type. (${data.name}.${item.name})`); }
 
                     // modifiers: not supported
-                    if (item.modifiers.length !== 0) { throw `Modifiers are not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.modifiers.length !== 0) { throw new Error(`Modifiers are not supported in this type. (${data.name}.${item.name})`); }
 
                     // optional: not supported
-                    if (item.optional) { throw `Optional member definition is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.optional) { throw new Error(`Optional member definition is not supported in this type. (${data.name}.${item.name})`); }
 
                     // conditional: not supported
-                    if (item.conditional.length !== 0) { throw `Conditional member definition is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.conditional.length !== 0) { throw new Error(`Conditional member definition is not supported in this type. (${data.name}.${item.name})`); }
                     break;                    
                 case kinds.class:
                 case kinds.mixin:
@@ -1256,60 +1305,60 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
                     case kinds.annotation:
                     case kinds.global:
                         // scope: always 'public'
-                        if (item.scope !== 'public') { throw `Defined member scope is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.scope !== 'public') { throw new Error(`Defined member scope is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // static: always 'true'
                         if (!item.static) { item.static = true; }
 
                         // modifiers: not supported
-                        if (item.modifiers.length !== 0) { throw `Modifiers are not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.modifiers.length !== 0) { throw new Error(`Modifiers are not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // optional: not supported
-                        if (item.optional) { throw `Optional member definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.optional) { throw new Error(`Optional member definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // conditional: not supported
-                        if (item.conditional.length !== 0) { throw `Conditional member definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.conditional.length !== 0) { throw new Error(`Conditional member definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
                         break;
                     case kinds.struct:
                         // scope: public/private
-                        if (item.scope !== 'public' && item.scope !== 'private') { throw `Defined member scope is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.scope !== 'public' && item.scope !== 'private') { throw new Error(`Defined member scope is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // modifiers: not supported
-                        if (item.modifiers.length !== 0) { throw `Modifiers are not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.modifiers.length !== 0) { throw new Error(`Modifiers are not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // destructor cannot be defined
-                        if (itemName === 'dispose') { throw `Destructors definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (itemName === 'dispose') { throw new Error(`Destructors definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
                         break;
                     case kinds.interface:
                         // scope: always 'public'
-                        if (item.scope !== 'public') { throw `Defined member scope is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.scope !== 'public') { throw new Error(`Defined member scope is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // static: not supported
-                        if (item.static) { throw `Static member definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.static) { throw new Error(`Static member definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // modifiers: not supported
-                        if (item.modifiers.length !== 0) { throw `Modifiers are not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.modifiers.length !== 0) { throw new Error(`Modifiers are not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // optional: not supported
-                        if (item.optional) { throw `Optional member definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.optional) { throw new Error(`Optional member definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // conditional: not supported
-                        if (item.conditional.length !== 0) { throw `Conditional member definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.conditional.length !== 0) { throw new Error(`Conditional member definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // throws: not supported
-                        if (item.throws.length !== 0) { throw `Throws definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (item.throws.length !== 0) { throw new Error(`Throws definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
 
                         // constructor/destructor cannot be defined
-                        if (itemName === 'construct') { throw `Constructor definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
-                        if (itemName === 'dispose') { throw `Destructors definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (itemName === 'construct') { throw new Error(`Constructor definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
+                        if (itemName === 'dispose') { throw new Error(`Destructors definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
                         break;
                     case kinds.class:
                         // no restrictions
                         break;
                     case kinds.mixin:
                         // constructor/destructor cannot be defined
-                        if (itemName === 'construct') { throw `Constructor definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
-                        if (itemName === 'dispose') { throw `Destructors definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`; }
+                        if (itemName === 'construct') { throw new Error(`Constructor definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
+                        if (itemName === 'dispose') { throw new Error(`Destructors definition is not supported in this type. (${data.name}.${item.name} [${item.signature}])`); }
                         break;
                 } 
             }
@@ -1345,29 +1394,29 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
             switch(kind) {
                 case kinds.struct:
                     // scope: public/private
-                    if (item.scope !== 'public' && item.scope !== 'private') { throw `Defined member scope is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.scope !== 'public' && item.scope !== 'private') { throw new Error(`Defined member scope is not supported in this type. (${data.name}.${item.name})`); }
 
                     // modifiers: not supported
-                    if (item.modifiers.length !== 0) { throw `Modifiers are not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.modifiers.length !== 0) { throw new Error(`Modifiers are not supported in this type. (${data.name}.${item.name})`); }
                     break;
                 case kinds.interface:
                     // scope: always 'public'
-                    if (item.scope !== 'public') { throw `Defined member scope is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.scope !== 'public') { throw new Error(`Defined member scope is not supported in this type. (${data.name}.${item.name})`); }
 
                     // static: not supported
-                    if (item.static) { throw `Static member definition is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.static) { throw new Error(`Static member definition is not supported in this type. (${data.name}.${item.name})`); }
 
                     // modifiers: not supported
-                    if (item.modifiers.length !== 0) { throw `Modifiers are not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.modifiers.length !== 0) { throw new Error(`Modifiers are not supported in this type. (${data.name}.${item.name})`); }
 
                     // optional: not supported
-                    if (item.optional) { throw `Optional member definition is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.optional) { throw new Error(`Optional member definition is not supported in this type. (${data.name}.${item.name})`); }
 
                     // conditional: not supported
-                    if (item.conditional.length !== 0) { throw `Conditional member definition is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.conditional.length !== 0) { throw new Error(`Conditional member definition is not supported in this type. (${data.name}.${item.name})`); }
 
                     // throws: not supported
-                    if (item.throws.length !== 0) { throw `Throws definition is not supported in this type. (${data.name}.${item.name})`; }
+                    if (item.throws.length !== 0) { throw new Error(`Throws definition is not supported in this type. (${data.name}.${item.name})`); }
                     break;
                 case kinds.class:
                 case kinds.mixin:
@@ -1399,6 +1448,7 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
             break;
         case kinds.component:
         case kinds.annotation:
+        case kinds.object:
         case kinds.global:
             defineConstants(data.kind);
             defineProperties(data.kind);
@@ -1407,6 +1457,7 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
         case kinds.guides:
         case kinds.examples:
         case kinds.pages:
+        case kinds.objects:
         case kinds.namespaces:
         case kinds.routes:
         case kinds.assets:
@@ -1446,38 +1497,39 @@ const getAnnotations = (options, asm, parent, content, name, kind) => {
         if (a) {
             switch(a.kind) {
                 case kinds.constant:
-                    if (members[a.name]) { throw `Only one definition can exisit for a member. (${a.name})`; }
+                    if (members[a.name]) { throw new Error(`Only one definition can exisit for a member. (${a.name})`); }
                     members[a.name] = a; 
                     constAnnotations.push(a.name);
                     break;
                 case kinds.property:
-                    if (members[a.name]) { throw `Only one definition can exisit for a member. (${a.name})`; }
+                    if (members[a.name]) { throw new Error(`Only one definition can exisit for a member. (${a.name})`); }
                     members[a.name] = a; 
                     propAnnotations.push(a.name);
                     break;
                 case kinds.method:
                     if (methodAnnotations.indexOf(a.name) !== -1) { 
                         if(!a.overload) {
-                            throw `Only one definition can exisit for a method unless defined as an overload. (${a.name})`; 
+                            throw new Error(`Only one definition can exisit for a method unless defined as an overload. (${a.name})`); 
                         } else {
                             members[a.name].push(a);
                             // update overloadId to the index number of the overload, this way - at 0th position, there is no overloadId for next onwardss, its 1, 2, etc.
                             a.overloadId = (members[a.name].length -1).toString();
                         }
                     } else {
-                        if (members[a.name]) { throw `Only one definition can exisit for a member (unless its an overload method). (${a.name})`; }
+                        if (members[a.name]) { throw new Error(`Only one definition can exisit for a member (unless its an overload method). (${a.name})`); }
                         members[a.name] = [a];
                         methodAnnotations.push(a.name);
                     }
                     break;                        
                 case kinds.event:
-                    if (members[a.name]) { throw `Only one definition can exisit for a member. (${a.name})`; }
+                    if (members[a.name]) { throw new Error(`Only one definition can exisit for a member. (${a.name})`); }
                     members[a.name] = a;
                     eventAnnotations.push(a.name);
                     break;
                 case kinds.guide:
                 case kinds.example:
                 case kinds.page:
+                case kinds.objectItem:
                 case kinds.route:
                 case kinds.asset:
                 case kinds.resource:
@@ -1485,7 +1537,7 @@ const getAnnotations = (options, asm, parent, content, name, kind) => {
                 case kinds.config:
                 case kinds.setting:
                 case kinds.namespace:
-                    if (members[a.name]) { throw `Only one definition can exisit for a member. (${a.name})`; }
+                    if (members[a.name]) { throw new Error(`Only one definition can exisit for a member. (${a.name})`); }
                     members[a.name] = a; 
                     itemAnnotations.push(a.name);
                     break;
@@ -1499,10 +1551,12 @@ const getAnnotations = (options, asm, parent, content, name, kind) => {
                 case kinds.interface:
                 case kinds.component:
                 case kinds.annotation:
+                case kinds.object:
                 case kinds.global:
                 case kinds.guides:
                 case kinds.examples:
                 case kinds.pages:
+                case kinds.objects:
                 case kinds.globals:
                 case kinds.components:
                 case kinds.namespaces:
@@ -1513,11 +1567,11 @@ const getAnnotations = (options, asm, parent, content, name, kind) => {
                 case kinds.libs:
                 case kinds.configs:
                 case kinds.settings:
-                    if (mainAnnotation) { throw `Only one block can have @type symbol. (${a.name})`; }
+                    if (mainAnnotation) { throw new Error(`Only one block can have @type symbol. (${a.name})`); }
                     mainAnnotation = a;
                     break;
                 default:
-                    throw `Unknown type. (${a.name})`;
+                    throw new Error(`Unknown type. (${a.name})`);
                     break;
             }
         }
@@ -1534,11 +1588,17 @@ const getAnnotations = (options, asm, parent, content, name, kind) => {
 const writeThemes = async (options) => {
     // copy themes folder as such, so default themes will be copied
     // even if there is any existing default themes, it will overwrite that
-    let inbuiltThemes = require.resolve('../templates/docs/themes/default/index.json').replace('/default/index.json', ''); 
+    let inbuiltThemes = require.resolve('../templates/docs/themes/default/index.json').replace('/default/index.json', ''),
+        excludes = [...options.general.ignoreFilesFolders];
     copyDir.sync(inbuiltThemes, pathJoin(options.docs.dest.root, 'themes'), {
         utimes: true,
         mode: true,
-        cover: true
+        cover: true,
+        filter: (stat, filepath) => {
+            if (wildcards.isMatchAny(filepath, excludes)) { return false; }
+            if (wildcards.isMatchAny(path.basename(filepath), excludes)) { return false; }
+            return true;
+        }                
     });
 
     // copy default favicon.png at root
@@ -1548,7 +1608,8 @@ const writeThemes = async (options) => {
 const writeEngine = async (options) => {
     // copy engine files at root/engine, except known files
     let engineFile = require.resolve('../templates/docs/engine/index.html'),
-        engineRoot = engineFile.replace('index.html', ''); 
+        engineRoot = engineFile.replace('index.html', ''),
+        excludes = [...options.general.ignoreFilesFolders];
     copyDir.sync(engineRoot, pathJoin(options.docs.dest.root, 'engine'), {
         utimes: true,
         mode: true,
@@ -1560,6 +1621,8 @@ const writeEngine = async (options) => {
                     return false;
                 }
             }
+            if (wildcards.isMatchAny(filepath, excludes)) { return false; }
+            if (wildcards.isMatchAny(path.basename(filepath), excludes)) { return false; }
             return true;
         }
     });
@@ -1601,7 +1664,7 @@ const writeDocs = async (options) => {
         let theTheme = (options.docs.theme || 'default'),
             themeRoot = pathJoin(options.docs.dest.root, 'themes', theTheme),
             template = pathJoin(themeRoot, 'index.html');
-        if (!fsx.existsSync(template)) { throw `Theme file missing. (${template})`; }
+        if (!fsx.existsSync(template)) { throw new Error(`Theme file missing. (${template})`); }
         template = template.replace(options.docs.dest.root, '.');
 
         // theme js/css files
@@ -1728,12 +1791,23 @@ const writeDocs = async (options) => {
 };
 const writeL10NTemplate = async (options) => {
     const copyFolder = (src, dest, fn) => {
+        let excludes = [...options.general.ignoreFilesFolders];
         fsx.ensureDirSync(dest);
-        if (fn) {
-            copyDir.sync(src, dest, { utimes: true, mode: true, cover: true, filter: fn });
-        } else {
-            copyDir.sync(src, dest, { utimes: true, mode: true, cover: true });
-        }
+        copyDir.sync(src, dest, { 
+            utimes: true, 
+            mode: true, 
+            cover: true,
+            filter: (stat, filepath) => {
+                if (wildcards.isMatchAny(filepath, excludes)) { return false; }
+                if (wildcards.isMatchAny(path.basename(filepath), excludes)) { return false; }
+
+                if (typeof fn === 'function') {
+                    return fn(stat, filepath);
+                }
+
+                return true;
+            }                  
+        });
     };
     const copyFiles = (files, destRoot, isWriteDocs) => {
         let l10nFileTemplate = '';
@@ -1871,6 +1945,7 @@ const getPackage = (options) => {
     data.examples = getExamples(options);
     data.guides = getGuides(options);
     data.pages = getPages(options);
+    data.objects = getObjects(options);
 
     // search
     data.search = (options.docs.search.build ? './search.json' : '');
@@ -1889,7 +1964,8 @@ const writePackage = async (options) => {
     // copy default docs folder of this package at package home
     // except *.info files
     let srcDocs = getSrc(options, 'docs'),
-        destDocs = getDest(options);
+        destDocs = getDest(options),
+        excludes = [...options.general.ignoreFilesFolders];
     if (fsx.pathExistsSync(srcDocs)) {
         copyDir.sync(srcDocs, destDocs, {
             utimes: true,
@@ -1901,9 +1977,13 @@ const writePackage = async (options) => {
 
                 // do not copy special folders
                 if(filepath.startsWith(path.join(srcDocs, 'guides')) ||
-                    filepath.startsWith(path.join(srcDocs, 'pages'))) { // used path.join instead of pathJoin on purpose
+                    filepath.startsWith(path.join(srcDocs, 'pages')) || 
+                    filepath.startsWith(path.join(srcDocs, 'objects'))) { // used path.join instead of pathJoin on purpose
                     return false;
                 }
+
+                if (wildcards.isMatchAny(filepath, excludes)) { return false; }
+                if (wildcards.isMatchAny(path.basename(filepath), excludes)) { return false; }
   
                 return true;
               }
@@ -1915,6 +1995,7 @@ const writePackage = async (options) => {
     writeExamples(options);
     writeGuides(options);
     writePages(options);
+    writeObjects(options);
 
     // search
     writeSearch(options);
@@ -2043,8 +2124,8 @@ const writeGuides = (options) => {
         for(let item of data.items) {
             // validate
             mdFile = pathJoin(options.build.src, 'docs', 'guides', item.link);
-            if (!mdFile.endsWith('.md')) { throw `Must be markdown file. (${item.name}: ${item.link})`; }
-            if (!fsx.existsSync(mdFile)) { throw `Guide markdown (${item.link}) not found. (${item.name})`; }
+            if (!mdFile.endsWith('.md')) { throw new Error(`Must be markdown file. (${item.name}: ${item.link})`); }
+            if (!fsx.existsSync(mdFile)) { throw new Error(`Guide markdown (${item.link}) not found. (${item.name})`); }
 
             // load content of whole guide
             item.guide = mdPage2html(fsx.readFileSync(mdFile, 'utf8'));
@@ -2111,7 +2192,7 @@ const writePages = (options) => {
         for(let item of data.items) {
             // validate
             htmlFile = getFile(pathJoin(options.build.src, 'docs', 'pages', item.name), 'index.html');
-            if (!htmlFile) { throw `Page not found. (${item.name})`; }
+            if (!htmlFile) { throw new Error(`Page not found. (${item.name})`); }
             
             // load content of whole html, associated js and css
             // for any required images etc, embedd using css techniques
@@ -2132,6 +2213,65 @@ const writePages = (options) => {
 
         // write
         file = getDest(options, 'pages.json');
+        plainWrite(options, file, data);
+    }
+};
+const getObjects = (options) => {
+    // objects (./docs/objects.info)
+    let content = getContent(options, 'docs', 'objects.info');
+    let data = getAnnotations(options, null, null, content, getString(options, 'objects'), kinds.objects);
+
+    // static items definition is supported in this info
+    // should be written as:
+    // @item <name> - <desc>
+    // @link { <./path/file.info> } <-- path should be in relation to ./objects folder (excluding ./objects itself)
+    // @group <group name>
+
+    // add to search
+    addToSearch(options, data);
+
+    // return
+    return data;
+};
+const writeObjects = (options) => {
+    // data
+    let packageData = options.docs.temp.json,
+        data = packageData.objects,
+        file = '';
+    delete packageData.objects;
+
+    if (data.items.length > 0) { // some objects exist 
+        // package items
+        addToItems(options, packageData.items, data, getString(options, 'members'));
+
+        // process each object
+        let objectInfoFile = '',
+            objectContent = '',
+            objectData = null,
+            items = [];
+        for(let item of data.items) {
+            // validate
+            objectInfoFile = pathJoin(options.build.src, 'docs', 'objects', item.link);
+            if (!fsx.existsSync(objectInfoFile)) { throw new Error(`Object info not found. (${item.name})`); }
+            
+            // load object info
+            objectContent = getContent(options, 'docs', 'objects', item.link);
+            objectData = getAnnotations(options, null, data, objectContent, item.name, kinds.object);
+
+            // object's members
+            writeMembers(options, objectData, '', 'objects', objectData.name);
+
+            // item's items
+            addToItems(options, items, item, item.group); // objects can be grouped using @group symbol
+
+            // write file
+            file = getDest(options, 'objects', `${item.name}.json`);
+            plainWrite(options, file, objectData); // write objectData not the item data
+        }
+        data.items = items;
+
+        // write
+        file = getDest(options, 'objects.json');
         plainWrite(options, file, data);
     }
 };
@@ -2375,6 +2515,9 @@ const writeNamespaces = (options, asm, asmData) => {
         file = '';
     delete asmData.namespaces;
 
+    // since namespaces.info is allowed to define namespace definitions manually for creating a home page
+    // for each namespace, anything that does not exists in namespaces.info, will not show-up on documentation
+    // however it does not mean that namespaces do not exists in assembly
     if (data.items.length > 0) { // some namespaces are defined
         // asm items
         addToItems(options, asmData.items, data, getString(options, 'members'));        

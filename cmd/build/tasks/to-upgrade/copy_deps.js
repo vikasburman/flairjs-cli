@@ -41,7 +41,7 @@ const copyDeps = function(options, isPost, done) {
                         processNext(items);
                     });
                 }).on('error', (e) => {
-                    throw `Failed to fetch dependency: ${item.src}. \n\n ${e}`;
+                    throw new Error(`Failed to fetch dependency: ${item.src}. \n\n ${e}`);
                 });
             } else { // local file / folder path
                 let src = path.resolve(item.src),
@@ -80,7 +80,7 @@ const copyDeps = function(options, isPost, done) {
                     }
                     options.logger(0, chalk.green(item.dest));
                 } else {
-                    throw `Destination is same as source. (${item.src})`;
+                    throw new Error(`Destination is same as source. (${item.src})`);
                 }
                 processNext(items);
             }

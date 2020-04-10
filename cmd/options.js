@@ -212,13 +212,20 @@ module.exports = {
         }
     },
 
-    // browsers to use for various operations
-    // as per configuration of: https://www.npmjs.com/package/open
-    browsers: {
-        chrome: { cmd: 'google chrome' },
-        'chrome-private': { cmd: ['google chrome', '--incognito'] },
-        firefox: { cmd: 'firefox' },
-        safari: { cmd: 'safari' }
+    // general settings that applies at many places
+    general: {
+        // browsers to use for various operations
+        // as per configuration of: https://www.npmjs.com/package/open
+        browsers: {
+            chrome: { cmd: 'google chrome' },
+            'chrome-private': { cmd: ['google chrome', '--incognito'] },
+            firefox: { cmd: 'firefox' },
+            safari: { cmd: 'safari' }
+        },
+
+        // master list of patterns of files/folder that will always be excluded for all processing
+        // from getFiles(), getFolders() and all copyDir.sync(), rrd() processings
+        ignoreFilesFolders: ['_*']       
     },
 
     // serving configuration for debug purposes
@@ -378,10 +385,10 @@ module.exports = {
                 tests: './tests'        
             },
 
-            // these folders, files and extension are skipped from normal iteration process
+            // these folders, files and extension are skipped from normal iteration process for assembly files/folders
             // and may be handled specifically on a case to case basis
             // use standard wildcards
-            exclude: ['_*', '*.spec.js', '*.mjs'],
+            exclude: ['*.spec.js', '*.mjs', '*.info'],
 
             // assembly file generation helper template
             main: require.resolve('./build/templates/asm/index.js')

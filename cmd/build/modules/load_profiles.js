@@ -2,10 +2,9 @@ const path = require('path');
 const chalk = require('chalk');
 const fsx = require('fs-extra');
 const copyDir = require('copy-dir');
-const junk = require('junk');
-const rrd = require('recursive-readdir-sync');
 const wildcards = require('../../shared/modules/wildcard_match');
 const getFolders = require('../../shared/modules/get_folders');
+const getFiles = require('../../shared/modules/get_files');
 const pathJoin = require('../../shared/modules/path_join');
 const mergeObjects = require('../../shared/modules/merge_objects');
 const guid = require('../../shared/modules/guid');
@@ -29,7 +28,7 @@ module.exports = async function(options) {
     for(let profileName of options.build.profiles.list) {
         profileConfig = options.build.profiles[profileName]; // look for profile name key under profiles
         if (!profileConfig) {
-            throw `Profile definition not found. (${p})`;
+            throw new Error(`Profile definition not found. (${p})`);
         } else {
             options.profiles = options.profiles || {};
             profile = loadProfile(options, profileName, profileConfig);
@@ -110,135 +109,6 @@ module.exports = async function(options) {
  *                                                              at the same place, as in main .src/ folder
 */ 
 
-const getFiles = (asmName, root, exclude, changedSince) => {
-    let set = {
-        changed: false,
-        files: [] // { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsname, nspath }
-    };
-    
-    // get all files
-    let allFiles = rrd(root).filter(file => junk.not(path.basename(file))),
-        excludedFolders = [],
-        cleanFolders = [],
-        nsRoot = pathJoin(root, 'types'),
-        ns = '',
-        idx = -1;
-    for(let f of allFiles) {
-        // file info
-        let file = {
-            folder: './' + path.dirname(f),                 // ./src/path
-            file: './' + f,                                 // ./src/path/(#-99).abc.js | ./src/path/(#-99).abc.min.js | ./src/path/(@).abc.json
-            filename: '',                                   // ./src/path/abc.js | ./src/path/abc.min.js | ./src/path/abc.json
-            basename: path.basename(f),                     // abc.js / abc.min.js / abc.json 
-            ext: path.extname(f).substr(1), // remove .     // js | json
-            index: 0,                                       // -99 / 0
-            isAsset: false,                                 // true, if starts with '(@).' OR ($). OR if kept inside 'types' folder and ext matches as listed in options.assets.ext
-            isL10n: false,                                  // true, if starts with '($).'
-            isNamespaced: false,                            // true, if file is a namespaced file 
-            nsName: '',                                     // empty for root namesapace, else name
-            nsPath: '',                                     // namespace path
-            docs: ''                                        // extracted docs symbols - loaded in code files after one pass, that helps in template generation
-        };
-
-        // extract namespace
-        if(file.folder.startsWith(nsRoot)) {
-            file.isNamespaced = true;
-            ns = file.folder.replace(nsRoot + '/', ''); if (ns === nsRoot) { ns = ''; } 
-            idx = ns.indexOf('/');
-            file.nsName = (idx === -1 ? ns : ns.substring(0, idx));
-            file.nsPath = pathJoin(nsRoot, file.nsName);
-        }
-
-        // exclusions
-        // 1: some parent folder of this file was already skipped, so skip this
-        if (excludedFolders.findIndex(a => file.folder.startsWith('./' + a)) !== -1) { continue; }
-
-        // 2: file (path+name) matches some pattern, so skip this
-        if (wildcards.isMatchAny(file.file, exclude)) { continue; }
-
-        // 3: file name (without path) matches some pattern, so skip this
-        if (wildcards.isMatchAny(file.basename, exclude)) { continue; }
-
-        // 4: any parent folder of this file (which is not yet added in excludedFolders is to be skipped)
-        // check only, if this is not identified as clean folder already
-        if (cleanFolders.indexOf(file.folder) === -1) {
-            let allFolders = file.folder.substr(2).split('/'), // exclude initial ./
-            isExecluded = false,
-            excluded = '';
-            if (allFolders.length > 0) {
-                excluded = '';
-                for(let fld of allFolders) {
-                    excluded += fld + '/';
-                    if (wildcards.isMatchAny(fld, exclude)) { 
-                        if (excludedFolders.indexOf(excluded) === -1) {
-                            excludedFolders.push(excluded); 
-                            isExecluded = true;
-                            break;
-                        } else {
-                            isExecluded = true;
-                            break;
-                        }
-                    }
-                }
-                if (isExecluded) {
-                    continue; 
-                } else {
-                    cleanFolders.push(file.folder); // mark as clean, so all files of this folder, don't come here in above loop
-                }
-            }
-        }
-
-        // get index and type of file
-        // any file inside assembly folder can be named as:
-        // {(#n).|(@).|($).}fileName.ext
-        // index can be:
-        //  (#n).         <-- file to be placed at nth positon wrt other files
-        //  all files are given 0 index by default
-        //  n can be negative ->>  (#-23).
-        //  n can be positive ->>  (#23). 
-        //  sorting happens: -23, 0, 23
-        if (file.basename.startsWith('(#')) { // file that will be embedded in assembly at a certain ordered position
-            let idx = file.basename.indexOf(').'); // first index of ).
-            if (idx !== -1) { // process only when ').' is also found (otherwise assume that (# is part of file name itself)
-                try {
-                    file.index = file.basename.substring(2, idx);
-                    if (file.index.substr(0) === '-') {
-                        file.index = parseInt(file.index) * -1;
-                    } else {
-                        file.index = parseInt(file.index);
-                    }
-                } catch (err) {
-                    throw `Between '(#' and ').', there must be an integer number. (${file.file})`;
-                }
-                file.basename = file.basename.substr(idx + 2);
-                file.filename = pathJoin(file.folder, file.basename);
-            }
-        } else if (file.basename.startsWith('(@).')) { // in-place namespaced asset of the assembly
-            if (file.isNamespaced) {
-                file.basename = file.basename.substr(4);
-                file.filename = pathJoin(file.folder, file.basename);
-                file.isAsset = true;
-            }
-        } else if (file.basename.startsWith('($).')) { // in-place namespaced localized asset of the assembly
-            if (file.isNamespaced) {
-                file.basename = file.basename.substr(4);
-                file.filename = pathJoin(file.folder, file.basename);
-                file.isAsset = true;
-                file.isL10n = true;
-            }
-        }
-        if (!file.filename) { file.filename = file.file; }
-
-        // add to list
-        set.files.push(file);
-     
-        // check for changed state, if needed to set and yet not found a changed
-        if (changedSince && !set.changed) { if (fsx.statSync(f).mtime > changedSince) { set.changed = true; } }
-    }
-
-    // return
-    return set;
-};
 const filterFiles = (files, root, isSort) => { 
     if (!root.endsWith('/')) { root += '/'; }
     let filteredFiles = files.filter(file => file.file.startsWith(root));
@@ -322,7 +192,7 @@ const loadProfile = (options, profileName, profileConfig) => {
         profile.dest = pathJoin(options.build.dest, profileName);
     } else if (profileConfig.dest.startsWith('@')) { // '@profile2': <profile2's destination path>/
         let dependentProfileName = profileConfig.dest.substr(1);
-        if (!options.profiles[dependentProfileName]) { throw `Dependent profile not loaded. (${dependentProfileName})`; }
+        if (!options.profiles[dependentProfileName]) { throw new Error(`Dependent profile not loaded. (${dependentProfileName})`); }
         profile.dest = options.profiles[dependentProfileName].dest;
     } else { //./dest/somename/
         profile.dest = pathJoin(options.build.dest, profileConfig.dest);
@@ -434,14 +304,15 @@ const loadProfileGroup = (options, profile, profileConfig, groupName) => {
     }
     
     // .assemblies
-    let folders = getFolders(group.src, true);
+    let folders = getFolders(group.src, true),
+        excludes = [...options.general.ignoreFilesFolders, ...options.build.assembly.exclude];
     group.assemblies = {};
-    group.assemblies.list = [];
+    group.assemblies.list = []
     for(let asmName of folders) {
         // exclude special folders from source root, if required
         if (group.src === options.build.src && options.build.exclude.indexOf(asmName) !== -1) { continue; } // ignore this special folder
 
-        if (!wildcards.isMatchAny(asmName, options.build.assembly.exclude)) { // exclude files/folders which are not to be processed at all
+        if (!wildcards.isMatchAny(asmName, excludes)) { // exclude files/folders which are not to be processed at all
             group.assemblies.list.push(asmName);
             group.assemblies[asmName] = () => { return loadGroupAssembly(options, profile, profileConfig, group, asmName); };
         }
@@ -578,10 +449,10 @@ const loadGroupAssembly = (options, profile, profileConfig, group, asmName) => {
 
     // .asyncTypeLoading
     asm.asyncTypeLoading = (asm.files.main === ''); // in case of custom main, async-loading is not allowed otherwise yes
-
+    
     // get list of all files of assembly
     // also check if any file changed since last-update, if currently skipBuild = true
-    let set = getFiles(asm.name, asm.src, options.build.assembly.exclude, (asm.skipBuild ? asm.dest.lupdate : null));
+    let set = getFiles(options, asm.src, [...options.general.ignoreFilesFolders, ...options.build.assembly.exclude], asm, (asm.skipBuild ? asm.dest.lupdate : null));
     asm.files.list = set.files;
     asm.skipBuild = (asm.skipBuild ? !set.changed : false); // if set was changed, set asm.skipBuild = false (means do re-build this assembly)
     
@@ -649,7 +520,7 @@ const listAssets = (options, asm) => {
 
     const addToLists = (file, dest, isCheckDuplicates) => {
         // duplicate check
-        if (isCheckDuplicates && allAssets.indexOf(dest) !== -1) { throw `Duplicate asset file found. (${file.file} --> ${dest})`; } // duplicte found
+        if (isCheckDuplicates && allAssets.indexOf(dest) !== -1) { throw new Error(`Duplicate asset file found. (${file.file} --> ${dest})`); } // duplicte found
         allAssets.push(dest);
 
         // file: { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsName, nsPath }
@@ -743,7 +614,7 @@ const listAssets = (options, asm) => {
                                             if (options.l10n.copyDefault) { // if default locale's copy is to be used
                                                 l10nFile = file;
                                             } else {
-                                                throw `Localized version (${l10nFile.file}) missing for '${locale}' locale. (${file.file})`;
+                                                throw new Error(`Localized version (${l10nFile.file}) missing for '${locale}' locale. (${file.file})`);
                                             }
                                         } else {
                                             // fix rest paths as well
@@ -775,8 +646,8 @@ const listFiles = (options, asm) => {
             for(let file of files) { // { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsName, nsPath }
                 // duplicate check
                 name = file.basename.replace('.' + file.ext, ''); // remove ext
-                if (name.indexOf('.') !== -1) { throw `Global name (${name}) cannot have dots. (${file.file})`; }
-                if (allNames.indexOf(name) !== -1) { throw `Duplicate global name (${name}) found. (${file.file})`; }
+                if (name.indexOf('.') !== -1) { throw new Error(`Global name (${name}) cannot have dots. (${file.file})`); }
+                if (allNames.indexOf(name) !== -1) { throw new Error(`Duplicate global name (${name}) found. (${file.file})`); }
                 allNames.push(name);
 
                 // build item { file: {}, name: '', lint: t/f, content: '', filename: '' }
@@ -797,7 +668,7 @@ const listFiles = (options, asm) => {
             let files = filterFiles(asm.files.list, asm.folders.includes),
                 item = null;
             for(let file of files) { // { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsName, nsPath }
-                if (file.ext !== 'js') { throw `Only javascript files can be included. (${file.file})`;  }
+                if (file.ext !== 'js') { throw new Error(`Only javascript files can be included. (${file.file})`);  }
                 // build item { file: {}, name: '', filename }
                 item = {
                     file: file,
@@ -854,8 +725,8 @@ const listFiles = (options, asm) => {
                 items = fsx.readJsonSync(asm.files.routes, 'utf8');
             for(let item of items) {
                 // validate
-                if (!item.name || !item.path || !item.handler) {throw `Invalid route definition found. (${item.name})`; } // mandatory fields
-                if (allNames.indexOf(item.name) !== -1) { throw `Duplicate route name found. (${item.name})`; }
+                if (!item.name || !item.path || !item.handler) {throw new Error(`Invalid route definition found. (${item.name})`); } // mandatory fields
+                if (allNames.indexOf(item.name) !== -1) { throw new Error(`Duplicate route name found. (${item.name})`); }
                 allNames.push(item.name);
 
                 // add item { n, m, p, h, v, w, i }
@@ -886,8 +757,8 @@ const listComponents = (options, asm) => {
             for(let file of files) { // { folder, file, filename, basename, ext, index, isAsset, isNamespaced, nsName, nsPath }
                 // duplicate check
                 name = file.basename.replace('.' + file.ext, ''); // remove ext
-                if (name.indexOf('.') !== -1) { throw `Component name (${name}) cannot have dots. (${file.file})`; }
-                if (allNames.indexOf(name) !== -1) { throw `Duplicate component name (${name}) found. (${file.file})`; }
+                if (name.indexOf('.') !== -1) { throw new Error(`Component name (${name}) cannot have dots. (${file.file})`); }
+                if (allNames.indexOf(name) !== -1) { throw new Error(`Duplicate component name (${name}) found. (${file.file})`); }
                 allNames.push(name);
 
                 // build item { file: {}, name, '', lint: t/f, content: '', type: '', filename: '' }
@@ -917,9 +788,9 @@ const listTypes = (options, asm) => {
 
             // duplicate check
             name = file.basename.replace('.' + file.ext, ''); // remove ext
-            if (name.indexOf('.') !== -1) { throw `Type name (${name}) cannot have dots. (${file.file})`; }
+            if (name.indexOf('.') !== -1) { throw new Error(`Type name (${name}) cannot have dots. (${file.file})`); }
             qualifiedName = (ns !== '' ? ns + '.' + name : name); // add namespace to name, except for root ns
-            if (allNames.indexOf(qualifiedName) !== -1) { throw `Duplicate type name (${qualifiedName}) found. (${file.file})`; }
+            if (allNames.indexOf(qualifiedName) !== -1) { throw new Error(`Duplicate type name (${qualifiedName}) found. (${file.file})`); }
             allNames.push(qualifiedName);
 
             // build item { file: '', ns: '', name, '', qualifiedName: '', lint: t/f, content: '', type: '', filename: '' }
@@ -971,9 +842,12 @@ const listTypes = (options, asm) => {
             // iterate on all namesapces
             // every folder under ./types folder is a namespace
             // ./types itself is for root namespace
-            let nsList = getFolders(asm.folders.types, true);
+            let nsList = getFolders(asm.folders.types, true),
+                excludes = [...options.general.ignoreFilesFolders, ...options.build.assembly.exclude];
             for (let ns of nsList) {
-                addNS(ns);
+                if (!wildcards.isMatchAny(ns, excludes)) { // exclude folders which are not to be processed at all
+                    addNS(ns);
+                }
             }
         }
     }

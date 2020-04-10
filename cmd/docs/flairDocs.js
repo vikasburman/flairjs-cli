@@ -30,7 +30,7 @@ module.exports = async (options) => {
     // open required browser
     // NOTE: this await will resolve when browser is closed (not just tab where index.html was opened)
     let url = `http://localhost:${options.docs.port}`,
-        browser = options.browsers[options.session.docs.browser || options.docs.browser || '']; // args given or configured or default
+        browser = options.general.browsers[options.session.docs.browser || options.docs.browser || '']; // args given or configured or default
     if (browser) {
         await open(url, { app: browser.cmd, wait: true });
     } else { // use default

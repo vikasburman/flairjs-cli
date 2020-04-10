@@ -46,7 +46,7 @@ const wildcards = require('../../shared/modules/wildcard_match');
 //  skipOnQuick: t/f    if task to be skipped when running a quick build <-- this is checked in run_tasks itself
 //  skipOnFull: t/f     if task to be skipped when running a full build  <-- this is checked in run_tasks itself
 module.exports = async function(taskConfig) {
-    if (!taskConfig.src) { throw `Copy source must be defined. (${taskConfig.level}, ${taskConfig.mode})`; }
+    if (!taskConfig.src) { throw new Error(`Copy source must be defined. (${taskConfig.level}, ${taskConfig.mode})`); }
 
     // read config
     let src = '', 

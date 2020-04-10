@@ -19,6 +19,8 @@
         "examples": "Examples",
         "page": "Page", 
         "pages": "Pages",
+        "object": "Object", 
+        "objects": "Objects",
         "assembly": "Assembly", 
         "assemblies": "Assemblies",
         "global": "Global", 

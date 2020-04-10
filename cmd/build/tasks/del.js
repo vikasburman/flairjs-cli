@@ -25,7 +25,7 @@ const del = require('del');
 //  skipOnQuick: t/f    if task to be skipped when running a quick build <-- this is checked in run_tasks itself
 //  skipOnFull: t/f     if task to be skipped when running a full build  <-- this is checked in run_tasks itself
 module.exports = async function(taskConfig) {
-    if (!taskConfig.dest) { throw `Delete path must be defined. (${taskConfig.level}, ${taskConfig.mode})`; }
+    if (!taskConfig.dest) { throw new Error(`Delete path must be defined. (${taskConfig.level}, ${taskConfig.mode})`); }
 
     // read config
     let level = taskConfig.current.level,

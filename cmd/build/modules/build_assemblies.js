@@ -91,7 +91,7 @@ const findDefinitionOf = (likes, file, content) => {
     let rex = new RegExp(`(${likes})\\s*\\(\\s*()\\s*`, 'g');
 
     const getKind = (type) => {
-        if (!kinds[type]) { throw `Unknown/unsupported type. (${type})`; }
+        if (!kinds[type]) { throw new Error(`Unknown/unsupported type. (${type})`); }
         return kinds[type];
     };
 
@@ -119,7 +119,7 @@ const findDefinitionOf = (likes, file, content) => {
                     result.index = match.index;
                     result.lineStartIndex = lineStartIndex;
                 } else {
-                    throw `Multiple '${match[1]}' definitions are not allowed in one file. (${file})`;
+                    throw new Error(`Multiple '${match[1]}' definitions are not allowed in one file. (${file})`);
                 }
 
                 // continue searching, as no two legit matches are allowed
@@ -184,7 +184,7 @@ const lintByType = async (options, file) => {
         case 'js': result = await lint.js(options, file.file); break;
         case 'html': result = await lint.html(options, file.file); break;
         case 'css': result = await lint.css(options, file.file); break;
-        default: throw `Unknown file type for lint operation. (${file.file})`; break;
+        default: throw new Error(`Unknown file type for lint operation. (${file.file})`); break;
     }
     return result;
 };
@@ -213,7 +213,7 @@ const minifyByType = async (options, type, content, src, dest, destRoot) => {
             } 
             break;
         default: 
-            throw `Unknown type for minify operation. (${type})`; 
+            throw new Error(`Unknown type for minify operation. (${type})`); 
             break;
     }
     return result;
@@ -312,7 +312,7 @@ const injectGlobals = async (options, asm) => { // globals
                 }
                 if (lintText) {
                     options.logger(0, chalk.keyword('lightseagreen')(global.filename), '', '', '', chalk.red(' lint: ✘ '));
-                    throw lintText;
+                    throw new Error(lintText);
                 } else {
                     lintText = ' lint: ✔ ';
                 }
@@ -351,7 +351,7 @@ const injectComponents = async (options, asm) => { // components
                 }
                 if (lintText) {
                     options.logger(0, chalk.keyword('lightseagreen')(comp.filename), '', '', comp.name, chalk.red(' lint: ✘ '));
-                    throw lintText;
+                    throw new Error(lintText);
                 } else {
                     lintText = ' lint: ✔ ';
                 }
@@ -367,7 +367,7 @@ const injectComponents = async (options, asm) => { // components
             comp.type = result.type;
             if (!comp.type) { 
                 options.logger(0, chalk.keyword('lightseagreen')(comp.filename), '', '', comp.name, chalk.red('Unknown component type.'));
-                throw `Unknown component type. Components can only be defined with: Component(), Annotation()`;
+                throw new Error(`Unknown component type. Components can only be defined with: Component(), Annotation()`);
             }
 
             // inject annotations
@@ -416,7 +416,7 @@ const injectResources = async (options, asm) => { // resources
                 }
                 if (lintMinText) {
                     options.logger(0, chalk.keyword('lightseagreen')(res.filename), '', '', res.name, chalk.red(' lint: ✘ '));
-                    throw lintMinText;
+                    throw new Error(lintMinText);
                 } else {
                     lintMinText += ' lint: ✔ ';
                 }
@@ -479,7 +479,7 @@ const injectTypes = async (options, asm) => { // types, ado.ty
                 }
                 if (lintText) {
                     options.logger(0, chalk.keyword('lightseagreen')(type.filename), '', '', '', chalk.red(' lint: ✘ '));
-                    throw lintText;
+                    throw new Error(lintText);
                 } else {
                     lintText = ' lint: ✔ ';
                 }
@@ -495,7 +495,7 @@ const injectTypes = async (options, asm) => { // types, ado.ty
             type.type = result.type;
             if (!type.type) { 
                 options.logger(0, chalk.keyword('lightseagreen')(type.filename), '', '', type.name, chalk.red('Unknown type of type.'));
-                throw `Unknown type of type. Types can only be defined with: Class(), Struct(), Mixin(), Enum(), and Interface()`;
+                throw new Error(`Unknown type of type. Types can only be defined with: Class(), Struct(), Mixin(), Enum(), and Interface()`);
             }            
 
             // inject annotations
@@ -550,7 +550,7 @@ const copyAssets = async (options, asm) => { // assets, namespaced-assets, libs,
                     }
                     if (lintMinGzText) {
                         options.logger(0, chalk.green(ast.name), '', '', '', chalk.red(' lint: ✘ '));
-                        throw lintMinGzText;
+                        throw new Error(lintMinGzText);
                     } else {
                         lintMinGzText += ' lint: ✔ ';
                     }
@@ -602,7 +602,7 @@ const writeAssembly = async (options, asm) => {
         let lintError = await lint.js(options, asm.dest.file);
         if (lintError) {
             options.logger(0, '', chalk.keyword('orange')('>>>'), chalk.green(asm.dest.file), '', chalk.red(' lint: ✘ '));
-            throw lintError;
+            throw new Error(lintError);
         } else {
             lintMinGzText += ' lint: ✔ ';
         }

@@ -3,6 +3,7 @@ const fsx = require('fs-extra');
 const copyDir = require('copy-dir');
 const child_process_exec = require('child_process').exec;
 const delAll = require('../../shared/modules/delete_all');
+const wildcards = require('../../shared/modules/wildcard_match');
 
 module.exports = async function(options) {
     if (!options.pack.perform) { return; }
@@ -15,7 +16,9 @@ module.exports = async function(options) {
     options.logger(1, '', 'clean');
 
     // copy files to package, so it can be published using
-    let src, dest = '';
+    let src = '', 
+        dest = '',
+        excludes = [...options.general.ignoreFilesFolders];
     for(let file of options.pack.files) {
         options.logger(1, '', file.src);
         src = path.resolve(file.src);
@@ -25,7 +28,12 @@ module.exports = async function(options) {
             copyDir.sync(src, dest, {
                 utimes: true,
                 mode: true,
-                cover: true
+                cover: true,
+                filter: (stat, filepath) => {
+                    if (wildcards.isMatchAny(filepath, excludes)) { return false; }
+                    if (wildcards.isMatchAny(path.basename(filepath), excludes)) { return false; }
+                    return true;
+                }                
               });
         } else {
             dest = path.join(temp, (file.dest || path.basename(src)));
@@ -43,7 +51,7 @@ module.exports = async function(options) {
     return new Promise((resolve, reject) => {
         child_process_exec(cmd, { cwd: options.pack.temp }, (err) => {
             if (err) { 
-               throw err;
+               throw new Error(err);
             } else {
                 if (fsx.existsSync(pkg)) {
                     fsx.ensureDirSync(options.pack.dest);

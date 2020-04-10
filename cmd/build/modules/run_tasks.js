@@ -12,7 +12,7 @@ module.exports = async function(options, mode, level, obj) {
                 return require.resolve(modName);
             }
         } catch (err) {
-            throw `Task module not found. (${modName})`;
+            throw new Error(`Task module not found. (${modName})`);
         }
     };
     const getTasks = (rootObject) => {
@@ -33,8 +33,8 @@ module.exports = async function(options, mode, level, obj) {
 
         // process list
         for(let item of list) {
-            if (!item.task) { throw `Task not defined. (${level}, ${mode})`; }
-            if (!options.custom.tasks[item.task]) { throw `Task definition not found. (${item.task})`; }
+            if (!item.task) { throw new Error(`Task not defined. (${level}, ${mode})`); }
+            if (!options.custom.tasks[item.task]) { throw new Error(`Task definition not found. (${item.task})`); }
             taskConfig = mergeObjects(options.custom.tasks[item.task], (item.config || {}), true);
             
             // add current prop to task config

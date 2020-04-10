@@ -6,7 +6,9 @@ const replaceAll = require('../../shared/modules/replace_all');
 const rrd = require('recursive-readdir-sync');
 const junk = require('junk');
 const copyDir = require('copy-dir');
+const getFiles = require('../../shared/modules/get_files');
 const specsTemplate = fsx.readFileSync(require.resolve('../templates/tests/specs/index.js'), 'utf8');
+const wildcards = require('../../shared/modules/wildcard_match');
 
 // generation steps
 exports.start = async (options) => {
@@ -70,58 +72,6 @@ exports.finish = async (options) => {
 };
 
 // support
-const getFiles = (root) => {
-    // get all files
-    let allFiles = rrd(root).filter(file => junk.not(path.basename(file))),
-        files = [];
-        
-    for(let f of allFiles) {
-        // file info
-        let file = {
-            folder: './' + path.dirname(f),                 // ./src/path
-            file: './' + f,                                 // ./src/path/(#-99).abc.js | ./src/path/(#-99).abc.min.js | ./src/path/(@).abc.json
-            filename: '',                                   // ./src/path/abc.js | ./src/path/abc.min.js | ./src/path/abc.json
-            basename: path.basename(f),                     // abc.js / abc.min.js / abc.json 
-            ext: path.extname(f).substr(1), // remove .     // js | json
-            index: 0,                                       // -99 / 0
-            isSpec: path.basename(f).toLowerCase().endsWith('.spec.js')
-        };
-
-        // get index of file
-        // any file inside test specs folder can be named as:
-        // {(#n).fileName.ext
-        // index can be:
-        //  (#n).         <-- file to be placed at nth positon wrt other files
-        //  all files are given 0 index by default
-        //  n can be negative ->>  (#-23).
-        //  n can be positive ->>  (#23). 
-        //  sorting happens: -23, 0, 23
-        if (file.basename.startsWith('(#')) { // file that will be embedded in specs at a certain ordered position
-            let idx = file.basename.indexOf(').'); // first index of ).
-            if (idx !== -1) { // process only when ').' is also found (otherwise assume that (# is part of file name itself)
-                try {
-                    file.index = file.basename.substring(2, idx);
-                    if (file.index.substr(0) === '-') {
-                        file.index = parseInt(file.index) * -1;
-                    } else {
-                        file.index = parseInt(file.index);
-                    }
-                } catch (err) {
-                    throw `Between '(#' and ').', there must be an integer number. (${file.file})`;
-                }
-                file.basename = file.basename.substr(idx + 2);
-                file.filename = pathJoin(file.folder, file.basename);
-            }
-        } 
-        if (!file.filename) { file.filename = file.file; }
-
-        // add to list
-        files.push(file);
-    }
-
-    // return
-    return files;
-};
 const collectSpecs = (options, files) => {
     let collectedFiles = [];
     for(let file of files) {
@@ -175,21 +125,21 @@ const writeUnitTests = async (options, asm) => {
     // order depends on code file's order itself
     folder = asm.folders.globals;
     if (fsx.existsSync(folder)) {
-        files.push(...collectSpecs(options, getFiles(folder)));
+        files.push(...collectSpecs(options, getFiles(options, folder, options.general.ignoreFilesFolders).files));
     }
 
     // collect from components
     // order depends on code file's order itself
     folder = asm.folders.components;
     if (fsx.existsSync(folder)) {
-        files.push(...collectSpecs(options, getFiles(folder)));
+        files.push(...collectSpecs(options, getFiles(options, folder, options.general.ignoreFilesFolders).files));
     }
 
     // collect from types
     // order depends on code file's order itself
     folder = asm.folders.types;
     if (fsx.existsSync(folder)) {
-        files.push(...collectSpecs(options, getFiles(folder)));
+        files.push(...collectSpecs(options, getFiles(options, folder, options.general.ignoreFilesFolders).files));
     }    
 
     // write
@@ -202,7 +152,7 @@ const writeFuncTests = async (options, asm) => {
     
     // collect from asm/tests
     if (asm.folders.tests) {
-        files.push(...collectSpecs(options, getFiles(asm.folders.tests)));
+        files.push(...collectSpecs(options, getFiles(options, asm.folders.tests, options.general.ignoreFilesFolders).files));
     }
 
     // write
@@ -216,7 +166,7 @@ const writeIntegrationTests = async (options) => {
     
     // collect from ./src/tests/specs/integration/
     if (fsx.existsSync(folder)) {
-        files.push(...collectSpecs(options, getFiles(folder)));
+        files.push(...collectSpecs(options, getFiles(options, folder, options.general.ignoreFilesFolders).files));
     }
    
     // write
@@ -230,7 +180,7 @@ const writeNonFuncTests = async (options) => {
     
     // collect from ./src/tests/specs/nonfunc/
     if (fsx.existsSync(folder)) {
-        files.push(...collectSpecs(options, getFiles(folder)));
+        files.push(...collectSpecs(options, getFiles(options, folder, options.general.ignoreFilesFolders).files));
     }
    
     // write
@@ -244,7 +194,7 @@ const writeSystemTests = async (options) => {
     
     // collect from ./src/tests/specs/system/
     if (fsx.existsSync(folder)) {
-        files.push(...collectSpecs(options, getFiles(folder)));
+        files.push(...collectSpecs(options, getFiles(options, folder, options.general.ignoreFilesFolders).files));
     }
    
     // write
@@ -258,7 +208,7 @@ const writeE2ETests = async (options) => {
     
     // collect from ./src/tests/specs/e2e/
     if (fsx.existsSync(folder)) {
-        files.push(...collectSpecs(options, getFiles(folder)));
+        files.push(...collectSpecs(options, getFiles(options, folder, options.general.ignoreFilesFolders).files));
     }
    
     // write
@@ -272,7 +222,7 @@ const writeHelpers = async (options) => {
     
     // collect from ./src/tests/helpers
     if (fsx.existsSync(folder)) {
-        let allFiles = getFiles(folder);
+        let allFiles = getFiles(options, folder, options.general.ignoreFilesFolders).files;
         for(let theFile of allFiles) {
             if (theFile.ext === 'js') {
                 files.push(theFile.filename); 
@@ -302,19 +252,26 @@ const writeGroupTests = async (options) => {
 };
 const writeData = async (options) => {
     // copy as is
-    let folder = pathJoin(options.build.src, 'tests', 'data');
+    let folder = pathJoin(options.build.src, 'tests', 'data'),
+        excludes = [...options.general.ignoreFilesFolders];
     if (fsx.existsSync(folder)) {
         copyDir.sync(folder, pathJoin(options.tests.dest, 'data'), {
             utimes: true,
             mode: true,
-            cover: true
-        });        
+            cover: true,
+            filter: (stat, filepath) => {
+                if (wildcards.isMatchAny(filepath, excludes)) { return false; }
+                if (wildcards.isMatchAny(path.basename(filepath), excludes)) { return false; }
+                return true;
+            }
+        });
     }
 };
 const writeEngine = async (options) => {
     // copy engine files at root, except known files
     let engineFile = require.resolve('../templates/tests/engine/index.html'),
-        engineRoot = engineFile.replace('index.html', ''); 
+        engineRoot = engineFile.replace('index.html', ''),
+        excludes = [...options.general.ignoreFilesFolders];
     copyDir.sync(engineRoot, options.tests.dest, {
         utimes: true,
         mode: true,
@@ -326,6 +283,8 @@ const writeEngine = async (options) => {
                     return false;
                 }
             }
+            if (wildcards.isMatchAny(filepath, excludes)) { return false; }
+            if (wildcards.isMatchAny(path.basename(filepath), excludes)) { return false; }
             return true;
         }
     });

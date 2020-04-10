@@ -45,7 +45,7 @@ const wildcards = require('../../shared/modules/wildcard_match');
 //  skipOnQuick: t/f    if task to be skipped when running a quick build <-- this is checked in run_tasks itself
 //  skipOnFull: t/f     if task to be skipped when running a full build  <-- this is checked in run_tasks itself
 module.exports = async function(taskConfig) {
-    if (!taskConfig.src) { throw `Copy source must be defined. (${taskConfig.level}, ${taskConfig.mode})`; }
+    if (!taskConfig.src) { throw new Error(`Copy source must be defined. (${taskConfig.level}, ${taskConfig.mode})`); }
 
     // read config
     let level = taskConfig.current.level,
@@ -53,7 +53,8 @@ module.exports = async function(taskConfig) {
         options = taskConfig.current.options,
         profile = taskConfig.current.profile,
         group = taskConfig.current.group,
-        asm = taskConfig.current.asm;
+        asm = taskConfig.current.asm,
+        excludes = [...options.general.ignoreFilesFolders, ...taskConfig.exclude];
 
     // resolve paths
     let { src, dest } = taskConfig.path(taskConfig.src || '', taskConfig.dest || '');
@@ -65,14 +66,15 @@ module.exports = async function(taskConfig) {
 
         // copy
         fsx.ensureDirSync(dest);
-        if (taskConfig.exclude && taskConfig.exclude.length > 0) { // check for exclusions
+        if (excludes.length > 0) { // check for exclusions
             copyDir.sync(src, dest, {
                 utimes: true,
                 mode: true,
                 cover: true,
                 filter: (state, filepath, filename) => {
                     let fullpath = path.join(filepath, filename);
-                    if (wildcards.isMatchAny(fullpath, taskConfig.exclude)) { return false; }
+                    if (wildcards.isMatchAny(fullpath, excludes)) { return false; }
+                    if (wildcards.isMatchAny(path.basename(fullpath), excludes)) { return false; }
                     return true;
                 }});
         } else { // no filters
