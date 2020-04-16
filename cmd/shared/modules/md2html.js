@@ -2,22 +2,22 @@ const showdown = require('showdown');
 const replaceAll = require('./replace_all');
 
 // hyperlink fixing
-// its converting <? href="linkText">?</?> ---> <? :href="dl('linkText')">?</?>
-// so this becomes a vuejs v-bind link and 'dl' is a function that will return
+// its converting <? href="linkText">?</?> ---> <? :href="func.dl('linkText')">?</?>
+// so this becomes a vuejs v-bind link and 'func.dl' is a function that will return
 // the dynamic link at UI
 const hl = (text) => {
     // href
     let rx = new RegExp(/href="(.+?)"/g); 
     let matches = text.match(rx) || [];  
     for(let m of matches) {
-        text = replaceAll(text, m, `:href="dl('${m.substring(6, m.length -1)}')"`);
+        text = replaceAll(text, m, `:href="func.dl('${m.substring(6, m.length -1)}')"`);
     }
 
     // src
     rx = new RegExp(/src="(.+?)"/g); 
     matches = text.match(rx) || []; 
     for(let m of matches) {
-        text = replaceAll(text, m, `:src="dl('${m.substring(5, m.length -1)}')"`);
+        text = replaceAll(text, m, `:src="func.dl('${m.substring(5, m.length -1)}')"`);
     }
 
     return text;

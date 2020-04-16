@@ -1,9 +1,25 @@
-<div class="container-fluid">
-    <div id="header" class="header" fragment="header"></div>
-    <div id="sidebar" class="sidebar" fragment="sidebar"></div>
-    <div id="content" class="content" fragment="content"></div>
-    <div id="home" class="home" fragment="home"></div>
-    <div id="404" class="404" fragment="404"></div>
-    <div id="highlights" class="highlights" fragment="highlights"></div>
-    <div id="footer" class="footer" fragment="footer"></div>
+<div id="banner" class="banner" customizable fragment="banner"></div>
+<nav id="header" class="header navbar navbar-expand-lg sticky-top">
+    <div id="brand" class="brand" fragment="brand"></div>
+    <div id="menu" class="collapse navbar-collapse" customizable fragment="menu"></div>
+</nav>
+
+<div v-show="func.isShowingPage()" id="pages" class="pages"></div>
+<div v-show="func.isShowingDocs()" id="docs" class="docs">
+    <nav v-show="func.hasLeftBarContent()" id="left" class="left">
+        <div id="attn" class="attn" customizable fragment="attn"></div>
+        <div id="list" class="list" fragment="list"></div>
+    </nav>
+    <div id="center" class="container-fluid">
+        <div class="row">
+            <div id="content" class="content col" fragment=""></div>
+            <div v-show="func.hasRightBarContent()" id="right" class="right col-auto">
+                <div ref="c2a" id="c2a" class="c2a" customizable fragment="c2a"></div>
+                <div ref="adv" id="adv" class="adv" customizable fragment="adv"></div>
+            </div>
+        </div>
+    </div>
 </div>
+
+<div id="footer" class="footer row" customizable fragment="footer"></div>    
+<nav id="footnote" class="footnote navbar navbar-expand-lg fixed-bottom" customizable fragment="footnote"></nav> 

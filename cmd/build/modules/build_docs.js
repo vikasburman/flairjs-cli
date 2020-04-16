@@ -25,13 +25,13 @@ exports.start = async (options) => {
 
     // write themes
     await writeThemes(options);
-
+  
     // write engine
     await writeEngine(options);
 
     // write docs
     await writeDocs(options);
-
+   
     // init for default locale
     initLocale(options, options.l10n.default);
 
@@ -118,7 +118,14 @@ const getDest = (options, ...more) => {
                     ...more);
 };
 const getString = (options, name) => {
-    return options.docs.temp.strings.names[name] || `<${name}>`;
+    if (name.indexOf('.') !== -1) { // its a namespaced name (only ns.name is supported)
+        let items = name.split('.'),
+            ns = items[0];
+        name = items[1];
+        return (options.docs.temp.strings[ns] ? (options.docs.temp.strings[ns][name] || `<define-string-${ns}.${name}>`) : `<define-string-${ns}.${name}>`);
+    } else { // its a name
+        return options.docs.temp.strings.names[name] || `<define-string-${name}>`;
+    }
 };
 const getContent = (options, ...more) => {
     // read given info file, and if not present, return a temp content
@@ -209,7 +216,7 @@ const writeMembers = (options, data, ...more) => {
     if (data.events) { data.items.push(...writeSpecificMember(data.events, getString(options, 'events'))); delete data.events; }
 };
 const addToItems = (options, items, data, group) => {
-    items.push({ link: data.docs.self, name: data.name, group: group, desc: data.desc });
+    items.push({ link: data.docs.self, name: data.name, kind: data.kind, group: group, desc: data.desc });
 };
 const addToSearch = (options, item) => {
     if (!options.docs.search.build) { return; }
@@ -311,7 +318,6 @@ const extractSymbols = (options, name, block) => {
     //  @restricted <desc>
     //  @since <version>
     //  @see <desc>                                             [multiple allowed]
-    //  @fiddle <fiddleId>
     //  @group <name>
     //  @link <item link>
     //                                         
@@ -325,11 +331,14 @@ const extractSymbols = (options, name, block) => {
     //  @yields {<type>/<type>/...} <desc>                                 
     //  @resolves {<type>/<type>/...} <desc>                               
     //  @throws {<type>} <desc>                                 [multiple allowed]
+    //  @faq {<group>} <question>                               [multiple allowed]    
     //
     // Type 5: @<symbol> { value1 } value2 - value3
     //  @param {<type>} <name> - <desc>                         [multiple allowed]
     //  @prop {<type>} <name> - <desc>                          
     //  @const {<type>} <name> - <desc> 
+    //  @fiddle { <fiddleId> } <name> - <desc>                  [multiple allowed]
+    //  @video { <embed-link> } <name> - <desc>                 [multiple allowed]
     //  
     // Type 6: @<symbol> value1 - value2
     //  @func <name> - <desc>
@@ -343,6 +352,9 @@ const extractSymbols = (options, name, block) => {
     //  @returns
     //  @yields
     //  @resolves
+    //  @throws
+    //  @fiddle
+    //  @video
     let lines = block.split('\n'),
         line = '',
         symbol = '',
@@ -352,18 +364,20 @@ const extractSymbols = (options, name, block) => {
         idx = -1,
         isIgnore = false,
         isIgnoreBlock = false,
+        processedType = 0,
         symbols = {},
         type1 = ['type', 'flags', 'public', 'private', 'protected', 'internal', 'abstract', 'virtual', 'override', 'sealed', 'overload', 'optional', 'beta', 'static', 'async', 'generator', 'readonly', 'ignore'],
-        type2 = ['js', 'desc', 'extends', 'deprecated', 'restricted', 'since', 'see', 'fiddle', 'group', 'link'],
+        type2 = ['js', 'desc', 'extends', 'deprecated', 'restricted', 'since', 'see', 'group', 'link'],
         type3 = ['mixes', 'implements', 'conditional'],
-        type4 = ['returns', 'yields', 'throws', 'resolves'],
-        type5 = ['param', 'prop', 'const'],
+        type4 = ['returns', 'yields', 'throws', 'resolves', 'faq'],
+        type5 = ['param', 'prop', 'const', 'fiddle', 'video'],
         type6 = ['func', 'event', 'item'],
-        type7 = ['example', 'remarks', 'param', 'returns', 'yields', 'resolves'],
-        multiInstance = ['param', 'see', 'throws'];
+        type7 = ['example', 'remarks', 'param', 'returns', 'yields', 'resolves', 'throws', 'fiddle', 'video', 'faq'],
+        multiInstance = ['param', 'faq', 'see', 'throws', 'fiddle', 'video'];
    
     for(let i = 0; i < lines.length; i++) {
         line = lines[i].trim();
+        processedType = 0;
        
         if (line !== '/**' && line !== '*/') { // not start/end line
             
@@ -396,15 +410,20 @@ const extractSymbols = (options, name, block) => {
                 symbolData = false;                      
                 if (type1.indexOf(symbol) !== -1) { // @<symbol>
                     symbolData = true;
+                    processedType = 1;
                 } else if (type2.indexOf(symbol) !== -1) { // @<symbol> value
                     symbolData = line;
+                    processedType = 2;
                 } else if (type3.indexOf(symbol) !== -1) { // @<symbol> value1, value2, ...
+                    symbolData = [];
                     symbolData = line.split(',').map(item => item.trim());
+                    processedType = 3;
                 } else if (type4.indexOf(symbol) !== -1) { // @<symbol> { value1 } value2
                     symbolData = [];    
                     items = line.split('}').map(item => item.trim());
                     symbolData.push(items[0].substr(1).trim()); // remove {
-                    symbolData.push(items[1] || '');                        
+                    symbolData.push(items[1] || '');   
+                    processedType = 4;                     
                 } else if (type5.indexOf(symbol) !== -1) { // @<symbol> { value1 } value2 - value3
                     symbolData = [];
                     items = line.split('}').map(item => item.trim());
@@ -412,13 +431,16 @@ const extractSymbols = (options, name, block) => {
                     items = (items[1] || '').split('-').map(item => item.trim());
                     symbolData.push(items[0] || '');
                     symbolData.push(items[1] || '');  
+                    processedType = 5;
                 } else if (type6.indexOf(symbol) !== -1) { // @<symbol> value1 - value2
                     symbolData = [];
                     items = line.split('-').map(item => item.trim());
                     symbolData.push(items[0] || '');
                     symbolData.push(items[1] || '');
+                    processedType = 6;
                 }
                 if (type7.indexOf(symbol) !== -1) { // @<symbol> \n multi-line value
+                    // processedType not defined here, here it is used instead
                     idx = i;
                     symbolDataEx = '';
                     while(true) {
@@ -432,8 +454,9 @@ const extractSymbols = (options, name, block) => {
                             break;
                         }
                     }
-                    // note: This may be in combination of type4, type5 or type6, means symbolData will be []
-                    if (Array.isArray(symbolData)) {
+                    // note: This may be for an already processed item of 4, 5 or 6 type
+                    // 1, 2 and 3 cannot have additional remarks as those are unit values
+                    if ([4, 5, 6].indexOf(processedType) !== -1) {
                         symbolData.push(symbolDataEx); // in type4 and type6, this will be at [2] index while in type5 this will be at [3] index
                     } else {
                         symbolData = symbolDataEx;
@@ -492,18 +515,24 @@ const Annotation = function(symbols, kind, name) {
      *       <multi-line markdown format desc> 
      * @resolves {<type>} <desc>    
      *       <multi-line markdown format desc>
-     * @throws {<type>} <desc> 
+     * @throws {<type>} <desc>
+     *      <multi-line markdown format desc>
      * @optional    
      * @beta    
      * @conditional <cond1>, <cond2>, ... 
-     * @deprecated <desc>                                       
+     * @deprecated <desc>                                     
      * @restricted <desc>                                       
      * @since <version>    
      * @remarks                                                 
      *      <multi-line markdown format desc>
-     * @exmple                                                  
+     * @example                                                  
      *      <multi-line markdown format text and embedded code>
-     * @fiddle <fiddleId>
+     * @fiddle { <fiddleId> } <name> - <desc>
+     *      <multi-line markdown format desc>
+     * @faq { <group-name> } <question>
+     *      <multi-line markdown format answer>
+     * @video { link } <name> - <desc>
+     *      <multi-line markdown format desc>
      * @see <desc>   
     */  
 
@@ -568,10 +597,72 @@ const Annotation = function(symbols, kind, name) {
         if (_seeAlso.length > 0) {
             ano.see = [];
             for(let item of _seeAlso) {
-                ano.see.push(md2html(item));
+                if (item) {
+                    ano.see.push(md2html(item));
+                }
             }
         }
     };
+    const defineFiddle = () => {
+        let _fiddles = symbols['fiddle'] || [],
+            f = null;
+        if (_fiddles.length > 0) {  
+            ano.fiddle = [];         
+        }
+        for(let _f of _fiddles) { // 0, 1, 2, 3 --> [ { id, name, desc, remarks } ]
+            f = { 
+                id: _f[0] || '', 
+                name: (_f[1] ? md2html(_f[1]) : ''), 
+                desc: (_f[2] ? md2html(_f[2]) : ''),
+                remarks: (_f[3] ? md2html(_f[3]) : '')
+            };
+            if (!f.id) { throw  new Error(`Fiddle id must be defined at @fiddle symbol. (${ano.name})`); }
+            if (!f.name) { throw  new Error(`Fiddle name must be defined at @fiddle symbol. (${ano.name})`); }
+            if (ano.fiddle.findIndex(a => a.name === f.name) !== -1) { throw  new Error(`Duplicate fiddle names (${f.name}) are not allowed at @fiddle symbol. (${ano.name})`); }
+            if (ano.fiddle.findIndex(a => a.id === f.id) !== -1) { throw  new Error(`Duplicate fiddle ids (${f.id}) are not allowed at @fiddle symbol. (${ano.name})`); }
+            ano.fiddle.push(f);
+        }
+    };
+    const defineVideo = () => {
+        let _videos = symbols['video'] || [],
+            v = null;
+        if (_videos.length > 0) {  
+            ano.video = [];         
+        }
+        for(let _v of _videos) { // 0, 1, 2, 3 --> [ { link, name, desc, remarks } ]
+            v = { 
+                link: _v[0] || '', 
+                name: (_v[1] ? md2html(_v[1]) : ''), 
+                desc: (_v[2] ? md2html(_v[2]) : ''),
+                remarks: (_v[3] ? md2html(_v[3]) : '')
+            };
+            if (!v.link) { throw  new Error(`Video link must be defined at @video symbol. (${ano.name})`); }
+            if (!v.name) { throw  new Error(`Video name must be defined at @video symbol. (${ano.name})`); }
+            if (ano.video.findIndex(a => a.name === v.name) !== -1) { throw  new Error(`Duplicate video names (${v.name}) are not allowed at @video symbol. (${ano.name})`); }
+            if (ano.video.findIndex(a => a.id === v.link) !== -1) { throw  new Error(`Duplicate video links (${v.link}) are not allowed at @video symbol. (${ano.name})`); }
+            ano.video.push(v);
+        }
+    };    
+    const defineFaq = () => {
+        let _faqs = symbols['faq'] || [],
+            f = null,
+            groups = [],
+            groupedItems = {};
+        if (_faqs.length > 0) {  
+            ano.faq = [];         
+        }
+        for(let _f of _faqs) { // 0, 1, 2 --> [{group: '', faqs: [ { question: '', answer: '' } ]}]
+            if (!_f[0]) { throw  new Error(`FAQ group must be defined at @faq symbol. (${ano.name})`); }
+            if (!_f[1]) { throw  new Error(`FAQ question must be defined at @faq symbol. (${ano.name})`); }
+            if (!_f[2]) { throw  new Error(`FAQ answer must be defined at @faq symbol. (${ano.name})`); }
+            if (groups.indexOf(_f[0]) === -1) { groups.push(_f[0]); }
+            groupedItems[_f[0]] = groupedItems[_f[0]] || [];
+            groupedItems[_f[0]].push({ question: md2html(_f[1]), answer: md2html(_f[2]) })
+        }
+        for(let _g of groups) { // _g is just name for grouping, hence no md2html
+            ano.faq.push({ group: _g, faqs: groupedItems[_g] })
+        }
+    };    
     const defineModifiers = () => {
         if (ano.kind === kinds.class) {
             if (!ano.static) {
@@ -601,16 +692,16 @@ const Annotation = function(symbols, kind, name) {
         if (typeof ano.params !== 'undefined') {
             let _params = symbols['param'] || [],
                 p = null;
-            for(let _p of _params) { // [ { type, name, desc } ]
-                p = { 
-                    type: md2html(_p[0] || ''), 
-                    name: _p[1] || '', 
-                    desc: md2html(_p[2] || ''),
-                    remarks: md2html(_p[3] || '')
+            for(let _p of _params) { // 0, 1, 2, 3 --> [ { type, name, desc, remarks } ]
+                if (!_p[0]) { throw  new Error(`Param type must be defined at @param symbol. (${ano.name})`); }
+                if (!_p[1]) { throw  new Error(`Param name must be defined at @param symbol. (${ano.name})`); }
+                if (ano.params.findIndex(a => a.name === _p[1]) !== -1) { throw  new Error(`Duplicate param names (${_p[1]}) are not allowed at @param symbol. (${ano.name})`); }
+                p = { // name, type are plain text
+                    type: _p[0], 
+                    name: _p[1], 
+                    desc: (_p[2] ? md2html(_p[2]) : ''),
+                    remarks: (_p[3] ? md2html(_p[3]) : '')
                 };
-                if (!p.type) { throw  new Error(`Param type must be defined at @param symbol. (${ano.name})`); }
-                if (!p.name) { throw  new Error(`Param name must be defined at @param symbol. (${ano.name})`); }
-                if (ano.params.findIndex(a => a.name === p.name) !== -1) { throw  new Error(`Duplicate param names (${p.name}) are not allowed at @param symbol. (${ano.name})`); }
                 ano.params.push(p);
             }
 
@@ -653,14 +744,19 @@ const Annotation = function(symbols, kind, name) {
                 ano.returns = null;
             } else {
                 if (symbols['returns']) { 
+                    let _r = symbols['returns'];
+                    if (!_r[0]) { throw new Error(`Return type must be defined at @returns symbol. @returns can be omitted altogether, if there is no return value. (${ano.name})`); }
                     ano.returns = {
-                        type: md2html(symbols['returns'][0] || ''),
-                        desc: md2html(symbols['returns'][1]  || ''),
-                        remarks: md2html(symbols['returns'][2]  || '')
+                        type: _r[0],
+                        desc: (_r[1] ? md2html(_r[1]) : ''),
+                        remarks: (_r[2] ? md2html(_r[2]) : '')
                     };
-                    if (!ano.returns.type) { throw new Error(`Return type must be defined at @returns symbol. It can be omitted altogether, if there is no return value. (${ano.name})`); }
                 } else {
-                    ano.returns = null;
+                    ano.returns = {
+                        type: 'undefined', // since this is a 'type', plain english is fine
+                        desc: '',
+                        remarks: ''
+                    };
                 }
             }
         }
@@ -669,12 +765,13 @@ const Annotation = function(symbols, kind, name) {
         if (typeof ano.generator !== 'undefined') {
             if (ano.generator) {
                 if (!symbols['yields']) { throw new Error(`@yields must be defined for a generator function. (${ano.name})`); }
+                let _y = symbols['yields'];
+                if (!_y[0]) { throw new Error(`Yield type must be defined at @yields symbol. (${ano.name})`); }
                 ano.yields = {
-                    type: md2html(symbols['yields'][0] || ''),
-                    desc: md2html(symbols['yields'][1] || ''),
-                    remarks: md2html(symbols['yields'][2] || '')
+                    type: _y[0],
+                    desc: (_y[1] ? md2html(_y[1]) : ''),
+                    remarks: (_y[2] ? md2html(_y[2]) : '')
                 };
-                if (!ano.yields.type) { throw new Error(`Yield type must be defined at @yields symbol. (${ano.name})`); }
             } else {
                 delete ano.yields;
             }
@@ -684,12 +781,13 @@ const Annotation = function(symbols, kind, name) {
         if (typeof ano.async !== 'undefined') {
             if (ano.async) {
                 if (!symbols['resolves']) { throw new Error(`@resolves must be defined for an async function. (${ano.name})`); }
+                let _r = symbols['resolves'];
+                if (!_r[0]) { throw new Error(`Resolve type must be defined at @resolves symbol. (${ano.name})`); }
                 ano.resolves = {
-                    type: md2html(symbols['resolves'][0] || ''),
-                    desc: md2html(symbols['resolves'][1] || ''),
-                    remarks: md2html(symbols['resolves'][2] || '')
+                    type: _r[0],
+                    desc: (_r[1] ? md2html(_r[1]) : ''),
+                    remarks: (_r[2] ? md2html(_r[2]) : '')
                 };
-                if (!ano.resolves.type) { throw new Error(`Resolve type must be defined at @resolves symbol. (${ano.name})`); }
             } else {
                 delete ano.resolves;
             }
@@ -697,15 +795,16 @@ const Annotation = function(symbols, kind, name) {
 
         // throws
         if (typeof ano.throws !== 'undefined') {
-            let _throws = symbols['throws'] || [], // { type, desc }
+            let _throws = symbols['throws'] || [], // { type, desc, remarks }
                 e = null;
             if (_throws.length > 0) {
-                for(let _e of _throws) { // [ [type, desc] ]
+                for(let _e of _throws) { // [ [type, desc, remarks] ]
+                    if (!_e[0]) { throw new Error(`Exception type must be defined at @throws symbol. (${ano.name})`); }
                     e = { 
-                        type: md2html(_e[0] || ''), 
-                        desc: md2html(_e[1] || '')
+                        type: _e[0], 
+                        desc: (_e[1] ? md2html(_e[1]) : ''),
+                        remarks: (_e[2] ? md2html(_e[2]) : '')
                     };
-                    if (!e.type) { throw new Error(`Exception type must be defined at @throws symbol. (${ano.name})`); }
                     ano.throws.push(e);
                 }
             }
@@ -722,23 +821,28 @@ const Annotation = function(symbols, kind, name) {
      *      <multi-line markdown format desc>
      * @exmple                                                  
      *      <multi-line markdown format text and embedded code>
-     * @fiddle <fiddleId>
+     * @fiddle { <fiddleId> } <name> - <desc>
+     *      <multi-line markdown format desc>
+     * @faq { <group-name> } <question>
+     *      <multi-line markdown format answer>
      * @see <desc>  
     */      
     let ano = {
         name: name,
         kind: kind,
         scope: 'public',
-        desc: md2html(symbols['desc'] || ''),               // ideally, this should not have any hyperlinks, because dl() will base the link wrongly on list pages - where same desc is used
-        deprecated: md2html(symbols['deprecated'] || ''),
-        restricted: md2html(symbols['restricted'] || ''),
+        description: (symbols['desc'] ? md2html(symbols['desc']) : ''),               // ideally, this should not have any hyperlinks, because dl() will base the link wrongly on list pages - where same desc is used
+        deprecated: (symbols['deprecated'] ? md2html(symbols['deprecated']) : ''),
+        restricted: (symbols['restricted'] ? md2html(symbols['restricted']) : ''),
         beta: (symbols['beta'] ? true : false),
-        since: md2html(symbols['since'] || ''),
-        remarks: md2html(symbols['remarks'] || ''),
-        example: md2html(symbols['example'] || ''),
-        fiddle: symbols['fiddle'] || ''
+        since: symbols['since'] || '', // just version number
+        remarks: (symbols['remarks'] ? md2html(symbols['remarks']) : ''),
+        example: (symbols['example'] ? md2html(symbols['example']) : '')
     };
     defineSeeAlso();
+    defineFaq();
+    defineFiddle();
+    defineVideo();
 
     // common for all top level types
     /** 
@@ -771,11 +875,16 @@ const Annotation = function(symbols, kind, name) {
                  * @js <type>
                  * @async
                  * @generator  
-                 * @param {<type>} <name> - <desc>                              
+                 * @param {<type>} <name> - <desc>
+                 *      <multi-line markdown format desc>                              
                  * @returns {<type>} <desc>
+                 *      <multi-line markdown format desc>
                  * @resolves {<type>} <desc>
+                 *      <multi-line markdown format desc>
                  * @yields {<type>} <desc>
+                 *      <multi-line markdown format desc>
                  * @throws {<type>} <desc> 
+                 *      <multi-line markdown format desc>
                 */
                 ano.jsType = symbols['js'] || '';
                 if (['function', 'constructor', 'class'].indexOf(ano.jsType) !== -1) {
@@ -818,8 +927,10 @@ const Annotation = function(symbols, kind, name) {
                 break;                
             case kinds.annotation:
                 /** 
-                 * @param {<type>} <name> - <desc>                                      
+                 * @param {<type>} <name> - <desc>
+                 *      <multi-line markdown format desc>                                      
                  * @throws {<type>} <desc> 
+                 *      <multi-line markdown format desc>
                 */
                 ano.params = [];
                 ano.signature = '';
@@ -895,6 +1006,7 @@ const Annotation = function(symbols, kind, name) {
         ano.static = symbols['static'] ? true : false;
         ano.optional = symbols['optional'] ? true : false;
         ano.conditional = symbols['conditional'] || [];
+        ano.desc = ''; // one liner desc after <name>
 
         if ([kinds.property, kinds.method, kinds.event].indexOf(kind) !== -1) {
             // common for these
@@ -910,33 +1022,46 @@ const Annotation = function(symbols, kind, name) {
             case kinds.constant:
                 /** 
                  * @const {<type>} name - <desc>
-                */                  
-                ano.type = md2html(symbols['const'][0] || 'object');
-                ano.name = symbols['const'][1]; if(!ano.name) { throw new Error(`Constant name must be defined at @const symbol.`); }
-                ano.desc = md2html((symbols['const'][2] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
-                break;                
+                */       
+                let _c = symbols['const']; 
+                if (!_c[0]) { throw new Error(`Constant type must be defined at @const symbol.`); }
+                if (!_c[1]) { throw new Error(`Constant name must be defined at @const symbol.`); }
+                ano.type = _c[0];
+                ano.name = _c[1];
+                ano.desc = (_c[2] ? md2html(_c[2]) : '');
+                break;
             case kinds.property:
                 /** 
                  * @prop {<type>} name - <desc>
                  * @readonly                                                           
-                */                  
-                ano.type = md2html(symbols['prop'][0] || 'object');
-                ano.name = symbols['prop'][1]; if(!ano.name) { throw new Error(`Property name must be defined at @prop symbol.`); }
-                ano.desc = md2html((symbols['prop'][2] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
+                */
+                let _p = symbols['prop']; 
+                if (!_p[0]) { throw new Error(`Property type must be defined at @prop symbol.`); }
+                if (!_p[1]) { throw new Error(`Property name must be defined at @prop symbol.`); }
+                ano.type = _p[0];
+                ano.name = _p[1];
+                ano.desc = (_p[2] ? md2html(_p[2]) : '');               
                 break;
             case kinds.method:
                 /** 
                  * @func <name> - <desc>
                  * @overload                                                           
                  * @async | @generator  
-                 * @param {<type>} <name> - <desc>                                      
+                 * @param {<type>} <name> - <desc>  
+                 *      <multi-line markdown format desc>                                    
                  * @returns {<type>} <desc>
+                 *      <multi-line markdown format desc>
                  * @resolves {<type>} <desc>
+                 *      <multi-line markdown format desc>
                  * @yields {<type>} <desc>    
+                 *      <multi-line markdown format desc>
                  * @throws {<type>} <desc> 
-                */                  
-                ano.name = symbols['func'][0]; if(!ano.name) { throw new Error(`Function (method) name must be defined at @func symbol.`); }
-                ano.desc = md2html((symbols['func'][1] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
+                 *      <multi-line markdown format desc>
+                */
+                let _n = symbols['func']; 
+                if (!_n[0]) { throw new Error(`Function (method) name must be defined at @func symbol.`); }
+                ano.name = _n[0];
+                ano.desc = (_n[1] ? md2html(_n[1]) : '');
                 ano.isConstructor = (ano.name === 'construct');
                 ano.isDestructor = (ano.name === 'dispose');
                 ano.overload = false;
@@ -957,10 +1082,14 @@ const Annotation = function(symbols, kind, name) {
                 /** 
                  * @event <name> - <desc>
                  * @param {<type>} <name> - <desc>   
-                 * @throws {<type>} <desc>                                    
-                */  
-                ano.name = symbols['event'][0]; if(!ano.name) { throw new Error(`Event name must be defined at @event symbol.`); }
-                ano.desc = md2html((symbols['event'][1] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
+                 *      <multi-line markdown format desc>
+                 * @throws {<type>} <desc>     
+                 *      <multi-line markdown format desc>                               
+                */
+                let _e = symbols['event']; 
+                if (!_e[0]) { throw new Error(`Event name must be defined at @event symbol.`); }
+                ano.name = _e[0];
+                ano.desc = (_e[1] ? md2html(_e[1]) : '');
                 ano.params = []; 
                 ano.signature = '';
                 ano.throws = [];
@@ -988,13 +1117,15 @@ const Annotation = function(symbols, kind, name) {
         }
     } else if ([kinds.guide, kinds.example, kinds.page, kinds.objectItem, kinds.namespace, kinds.route, kinds.asset, kinds.resource, kinds.lib, kinds.config, kinds.setting].indexOf(kind) !== -1) {
         /** 
-         * @item name - <desc>
+         * @item <name> - <desc>
          * @group <group-name>
          * @link <link>
         */
-        ano.name = symbols['item'][0]; if(!ano.name) { throw new Error(`Item name must be defined at @item symbol.`); }
-        ano.desc = md2html((symbols['item'][1] || '') + (symbols['desc'] ? '\n' + symbols['desc'] : ''));
-        ano.group = symbols['group'] || '';
+        let _i = symbols['item']; 
+        if (!_i[0]) { throw new Error(`Item name must be defined at @item symbol.`); }
+        ano.name = _i[0];
+        ano.desc = (_i[1] ? md2html(_i[1]) : '');       
+        ano.group = symbols['group'] || ''; // just name for grouping
         ano.link = symbols['link'] || '';
 
         if (kind === kinds.guide) {
@@ -1002,10 +1133,12 @@ const Annotation = function(symbols, kind, name) {
             ano.guide = ''; // will be loaded with guide content
 
         } else if (kind === kinds.page) {  
-            // html, js and css content
+            // additional props for page
             ano.html = '';
             ano.css = '';
             ano.js = '';
+            ano.fragments = ''; // fragments root for the page
+            ano.func = {}; // page specific functions will be loaded here at runtime by page's js
         }
     } else {
         // unknown kind
@@ -1055,7 +1188,6 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
     const addDocsInfo = (item, parent) => {
         // add docs info
         item.docs = {
-            template: '',
             asm: {
                 name: (asm ? asm.name : ''),
                 link: (asm ? asm.name : '')
@@ -1067,9 +1199,6 @@ const buildAnnotationData = (options, asm, member, members, mainAnnotation, item
             self: '',
             members: ''
         };
-
-        // common template for all
-        item.docs.template = 'content';
 
         switch(item.kind) {
             case kinds.package:
@@ -1606,6 +1735,7 @@ const writeThemes = async (options) => {
     fsx.copyFileSync(favicon, pathJoin(options.docs.dest.root, 'favicon.png'));    
 };
 const writeEngine = async (options) => {
+    
     // copy engine files at root/engine, except known files
     let engineFile = require.resolve('../templates/docs/engine/index.html'),
         engineRoot = engineFile.replace('index.html', ''),
@@ -1626,7 +1756,7 @@ const writeEngine = async (options) => {
             return true;
         }
     });
-
+   
     // copy flairDocs.js at root as flairDocs.min.js
     let flairDocs = pathJoin(engineRoot, 'js', 'flairDocs.js'),
         content = fsx.readFileSync(flairDocs, 'utf8');
@@ -1681,9 +1811,10 @@ const writeDocs = async (options) => {
         // theme data
         let theme = {
             files: files,
-            template: template,
+            index: template,
             root: pathJoin('./themes', theTheme),
-            fragments: pathJoin('./themes', theTheme, 'fragments')
+            fragments: pathJoin('./themes', theTheme, 'fragments'),
+            func: {} // theme specific func will be loaded here by theme's js file
         };
 
         // return
@@ -1762,17 +1893,10 @@ const writeDocs = async (options) => {
             list: getPackages(),
             default: options.docs.packages.default || options.package.name
         },
-        theme: getThemeData(),
-        branding: {
-            favicon: (options.docs.branding.favicon ? `./${options.docs.branding.favicon}` : ''),
-            logo: options.docs.branding.logo || '',
-            home: options.docs.branding.home || '',
-            highlights: options.docs.branding.highlights || ''
-        },
-        ui: options.docs.ui
+        theme: getThemeData()
     };
 
-    // write favicon, if defined
+    // write favicon, if defined (favicon is not localized - and that's why being picked from .src and not from getSrc())
     if (options.docs.branding.favicon) {
         let favIcon = pathJoin(options.build.src, 'docs', options.docs.branding.favicon);
         if (fsx.existsSync(favIcon)) {
@@ -1926,19 +2050,45 @@ const getPackage = (options) => {
     let content = getContent(options, 'docs', 'package.info');
     let data = getAnnotations(options, null, null, content, options.docs.temp.strings.packages[options.package.name] || options.package.title, kinds.package);
 
+    const getInfo = () => {
+        return {
+            name: options.package.name,
+            title: options.docs.temp.strings.packages[options.package.name] || options.package.title,
+            copyright: options.package.copyright || '',
+            license: options.package.license || '',
+            version: options.package.version || '',
+        };
+    };
+    const getBranding = () => {
+        let branding = options.docs.branding;
+
+        // process all fragments for proper urls
+        for(let f in branding.fragments) {
+            if (branding.fragments.hasOwnProperty(f) && branding.fragments[f]) {
+                branding.fragments[f] = `pages/${branding.fragments[f]}.json`;
+            }
+        }
+        // process all pages for proper urls
+        for(let p in branding.pages) {
+            if (branding.pages.hasOwnProperty(p) && branding.pages[p]) {
+                branding.pages[p] = `pages/${branding.pages[p]}.json`;
+            }
+        }        
+        
+        // return
+        return branding;
+    };
+
     // static items definition is not supported in this info
     // therefore overwrite with empty, in case it was defined,
     // so dynamic info can be added
     data.items = [];
 
     // info
-    data.info = {
-        name: options.package.name,
-        title: options.docs.temp.strings.packages[options.package.name] || options.package.title,
-        copyright: options.package.copyright || '',
-        license: options.package.license || '',
-        version: options.package.version || '',
-    };
+    data.info = getInfo();
+
+    // branding
+    data.branding = getBranding();
 
     // members
     data.api = getAPI(options);
@@ -2123,9 +2273,9 @@ const writeGuides = (options) => {
             items = [];
         for(let item of data.items) {
             // validate
-            mdFile = pathJoin(options.build.src, 'docs', 'guides', item.link);
-            if (!mdFile.endsWith('.md')) { throw new Error(`Must be markdown file. (${item.name}: ${item.link})`); }
-            if (!fsx.existsSync(mdFile)) { throw new Error(`Guide markdown (${item.link}) not found. (${item.name})`); }
+            if (!item.link.endsWith('.md')) { throw new Error(`Must be markdown file. (${item.name}: ${item.link})`); }
+            mdFile = getSrc(options, 'docs', 'guides', item.link);
+            if (!fsx.existsSync(mdFile) && !options.docs.l10n.copyDefault) { throw new Error(`Guide markdown (${item.link}) not found. (${item.name})`); }
 
             // load content of whole guide
             item.guide = mdPage2html(fsx.readFileSync(mdFile, 'utf8'));
@@ -2152,7 +2302,8 @@ const getPages = (options) => {
     // static items definition is supported in this info
     // should be written as:
     // @item <name> - <desc>
-    //      each page name must exists in same name folder under ./pages as: ./pages/<name>/index.html (alongside index.js and index.css can also exists if need be and will be processed)
+    // @link { <./path/index.html> } <-- path should be in relation to ./pages folder (excluding ./pages itself)
+    //                                   if a corrosponding js and css exists, it should have same basename as of html file
     // @group <group name>
 
     // add to search
@@ -2162,16 +2313,30 @@ const getPages = (options) => {
     return data;
 };
 const writePages = (options) => {
-    const getFile = (srcPath, srcFile) => {
-        if (!fsx.existsSync(pathJoin(srcPath, srcFile))) { 
-            if (srcFile.startsWith('($).')) {
-                srcFile = srcFile.substr(4); // remove
-            } else {
-                srcFile = '($).' + srcFile; // add
+    const getFile = (...more) => {
+        let srcPath = getSrc(options, ...more),
+            srcFile = path.basename(srcPath);
+        if (!fsx.existsSync(srcPath)) { 
+            if (srcFile.startsWith('($).')) { // try after remove
+                srcPath = srcPath.replace('($).', '');
+            } else { // try after adding
+                srcPath = pathJoin('./' + path.dirname(srcPath), '($).' + srcFile);
             }
-            if (!fsx.existsSync(pathJoin(srcPath, srcFile))) { return ''; }
+            if (!fsx.existsSync(srcPath)) { return ''; }
         }
-        return pathJoin(srcPath, srcFile);
+        return srcPath;
+    };
+    const getAssociatedFile = (srcFile, asExt) => {
+        srcFile = srcFile.replace(path.extname(srcFile), asExt);
+        if (!fsx.existsSync(srcFile)) { 
+            if (srcFile.indexOf('($).') !== -1) { // try after remove
+                srcFile = srcFile.replace('($).', '');
+            } else { // try after adding
+                srcFile = pathJoin('./' + path.dirname(srcFile), '($).' + path.basename(srcFile));
+            }
+            if (!fsx.existsSync(srcFile)) { return ''; }
+        }
+        return srcFile;
     };
 
     // data
@@ -2188,22 +2353,38 @@ const writePages = (options) => {
         let htmlFile = '',
             jsFile = '',
             cssFile = '',
+            skipAddingToList = false,
             items = [];
         for(let item of data.items) {
             // validate
-            htmlFile = getFile(pathJoin(options.build.src, 'docs', 'pages', item.name), 'index.html');
-            if (!htmlFile) { throw new Error(`Page not found. (${item.name})`); }
+           
+            htmlFile = getFile('docs', 'pages', item.link);
+            if (!htmlFile && !options.docs.l10n.copyDefault) { throw new Error(`Page not found. (${item.name})`); }
             
             // load content of whole html, associated js and css
             // for any required images etc, embedd using css techniques
-            item.html = fsx.readFileSync(htmlFile, 'utf8');
-            jsFile = getFile(pathJoin(options.build.src, 'docs', 'pages', item.name), 'index.js');
-            if (jsFile) { item.js = fsx.readFileSync(jsFile, 'utf8'); }
-            cssFile = getFile(pathJoin(options.build.src, 'docs', 'pages', item.name), 'index.css');
-            if (cssFile) { item.css = fsx.readFileSync(cssFile, 'utf8'); }
+            if (htmlFile) {
+                item.html = fsx.readFileSync(htmlFile, 'utf8');
+                jsFile = getAssociatedFile(htmlFile, '.js');
+                if (jsFile) { item.js = fsx.readFileSync(jsFile, 'utf8'); }
+                cssFile = getAssociatedFile(htmlFile, '.css');
+                if (cssFile) { item.css = fsx.readFileSync(cssFile, 'utf8'); }
+                item.fragments = pathJoin('pages', item.link.replace(path.basename(item.link), 'fragments').replace('./', '')); // ./home/index.html -> pages/home/fragments
+            }
 
-            // item's items
-            addToItems(options, items, item, item.group); // pages can be grouped using @group symbol
+            // item's items (only if this is not used as a customized fragment or page for branding)
+            skipAddingToList = false;
+            for(let frag in options.docs.branding.fragments) {
+                if (options.docs.branding.fragments[frag] === item.name) { skipAddingToList = true; break; }
+            }
+            if (!skipAddingToList) {
+                for(let pg in options.docs.branding.pages) {
+                    if (options.docs.branding.pages[pg] === item.name) { skipAddingToList = true; break; }
+                }            
+                if (!skipAddingToList) {
+                    addToItems(options, items, item, item.group); // pages can be grouped using @group symbol
+                }
+            }
 
             // write file
             file = getDest(options, 'pages', `${item.name}.json`);
@@ -2251,8 +2432,8 @@ const writeObjects = (options) => {
             items = [];
         for(let item of data.items) {
             // validate
-            objectInfoFile = pathJoin(options.build.src, 'docs', 'objects', item.link);
-            if (!fsx.existsSync(objectInfoFile)) { throw new Error(`Object info not found. (${item.name})`); }
+            objectInfoFile = getSrc(options, 'docs', 'objects', item.link);
+            if (!fsx.existsSync(objectInfoFile) && !options.docs.l10n.copyDefault) { throw new Error(`Object info not found. (${item.name})`); }
             
             // load object info
             objectContent = getContent(options, 'docs', 'objects', item.link);
@@ -2366,8 +2547,21 @@ const writeAsm = async (options, asm) => {
     writeConfigs(options, asm, data);
     writeSettings(options, asm, data);
 
+    // group of assembly here will be same as 
+    // build group of assembly, with an option to give a proper display name to
+    // each group via strings.json under: 
+    // asmGroups {  }
+    // in case no grouping is required, an empty string for group name in strings.json 
+    // will do the trick
+    let asmGroup = asm.group.name;
+    if (asmGroup !== 'default') { // default is inbuilt name
+        asmGroup = getString(options, `asmGroups.${asmGroup}`);
+    } else {
+        asmGroup = '';
+    }
+
     // api items
-    addToItems(options, packageData.api.items, data, getString(options, 'members'));
+    addToItems(options, packageData.api.items, data, asmGroup);
 
     // write
     file = getDest(options, asm.name, 'index.json');

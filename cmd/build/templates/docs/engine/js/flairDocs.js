@@ -7,6 +7,9 @@
             guide: 'guide',
             examples: 'examples',
             example: 'example',
+            objects: 'objects',
+            object: 'object',
+            objectItem: 'objectItem',
             pages: 'pages',
             page: 'page',
             assembly: 'assembly',
@@ -26,8 +29,6 @@
             property: 'property',
             constant: 'constant',
             method: 'method',
-            constructor: 'constructor',
-            destructor: 'destructor',
             event: 'event',
             routes: 'routes',
             route: 'route',
@@ -43,10 +44,21 @@
             setting: 'setting'
         };
         let data = {},
+            pages = {
+                home: null,
+                '404': null
+            },
+            customizableAreas = [],
             vueApp = null,
-            func = {},
-            isStarted = false;
-        
+            isStarted = false,
+            isPackageVersionLocaleChanged = false;
+            
+        const escapeRegExp = (string) => {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");  // eslint-disable-line no-useless-escape
+        };
+        const replaceAll = function(string, find, replace) { // replace all instances of given string in other string
+            return string.replace(new RegExp(escapeRegExp(find), 'g'), replace);
+        };            
         const getData = (url) => {
             // note: data is purposoly not cached and itstead it relies on browser cache etc.
             return new Promise((resolve, reject) => {
@@ -61,94 +73,348 @@
                 });
             });
         };
-        const render = async () => {
-            if (!data.content) { // 404
-                // hide all top level fragments
-                data.flags.showHeader = false;
-                data.flags.showFooter = false;
-                data.flags.showSidebar = false;
-                data.flags.showContent = false;
-                data.flags.showHighlights = false;
-
-                // show 404
-                data.flags.show404 = true;
-            } else {
-                // hide 404
-                data.flags.show404 = false;
-
-                // show header, footer
-                data.flags.showHeader = true;
-                data.flags.showFooter = true;
-
-                // highlights
-                // TODO: will come in home package always - from options settings
+        const getTemplate = (file) => {
+            // note: template is purposoly not cached and itstead it relies on browser cache etc.
+            return new Promise((resolve, reject) => {
+                if (file.startsWith('./')) { file = file.substr(2); }  // remove ./
+                if (file.startsWith('/')) { file = file.substr(1); }  // remove /
                 
-                // kind specifc fragments visibility
-                switch(data.content.kind) {
-                    case kinds.package:
-                    case kinds.examples:
-                    case kinds.example:
-                    case kinds.guides:
-                    case kinds.guide:
-                    case kinds.pages:
-                    case kinds.page:
-                    case kinds.api:
-                    case kinds.assembly:
-                    case kinds.globals:
-                    case kinds.global:                        
-                    case kinds.components:
-                    case kinds.component:
-                    case kinds.annotation:
-                    case kinds.namespaces:
-                    case kinds.namespace:
-                    case kinds.types:
-                    case kinds.class:
-                    case kinds.struct:
-                    case kinds.enum:
-                    case kinds.mixin:
-                    case kinds.interface: 
-                    case kinds.routes:
-                    case kinds.route:
-                    case kinds.resources:
-                    case kinds.resource:
-                    case kinds.assets:
-                    case kinds.asset:
-                    case kinds.libs:
-                    case kinds.lib:
-                    case kinds.configs:
-                    case kinds.config:
-                    case kinds.settings:
-                    case kinds.setting:
-                    case kinds.constant:
-                    case kinds.property:
-                    case kinds.method:
-                    case kinds.event:
-                    default:
+                $.ajax({
+                    dataType: "text",
+                    url: file,
+                    success: (text) => {
+                        resolve(text);
+                    },
+                    error: (err) => {
+                        console.error(err);
+                        resolve(null); // still resolve
+                    }
+                });
+               
+            });
+        };
+        const loadFragments = async (fragmentsRoot, $$root, includeSelf, includeCustomFragments, isAddCustomFragmentToList) => {
+            const loadPageAsFragment = async (pageLink) => {
+                let pageName = replaceAll(replaceAll(pageLink, '/', '_'), '.', '_');
+                let json = await getData(`${data.rootUrl}/${pageLink}`);
+                if (json && json.html) {
+                    // delete old js/css elements, if any
+                    let jsId = `_${pageName}_js`,
+                        cssId = `_${pageName}_css`;
+                    $('head').find('#' + jsId).remove();
+                    $('head').find('#' + cssId).remove();
+                    
+                    // load custom fragment's js and css
+                    if (json.js) { $(`<script id="${jsId}" type="text/javascript"> ${json.js} </script>`).appendTo('head'); }
+                    if (json.css) { $(`<style id="${cssId}" type="text/css"> ${json.css} </style>`).appendTo('head'); }
+                    
+                    // return
+                    return json.html;
                 }
+                return '';
+            };
+
+            let selector = '[fragment]',
+                $items = (includeSelf ? [$$root, ...$$root.find(selector)] : $$root.find(selector)),
+                $$el = null,
+                fragmentName = '',
+                fragmentFile = '',
+                fragmentHtml = '';
+            for(let $el of $items) {
+                $$el = $($el);
+                fragmentName = $$el.attr('fragment');
+                if (!fragmentName) { continue; }
+
+                // default fragment
+                fragmentFile = `${fragmentsRoot}/${fragmentName}.html`; 
+
+                if (typeof $$el.attr('customizable') !== 'undefined') { // custom
+                    if (isAddCustomFragmentToList) { customizableAreas.push($$el); }
+                    if (!includeCustomFragments) { continue; }
+
+                    // check if closed for this user (cookie based)
+                    // a cookie can be set with the same name as of customizable area with required expiry date
+                    // using setCookie function
+                    // here before loading the fragment, presence of cookie will be checked, if found, the area
+                    // will not be loaded
+                    if (data.func.cookie.get($$el.attr('id'))) { continue; }
+
+                    // try to get given custom (as page)
+                    if (data.branding.fragments[fragmentName]) {
+                        fragmentHtml = await loadPageAsFragment(data.branding.fragments[fragmentName]);
+                        if (fragmentHtml) { fragmentFile = ''; } // so it does not load it as default now
+                    } 
+                }
+
+                // get default template, if not already got from custom (or there was no custom)
+                if (fragmentFile) { fragmentHtml = await getTemplate(fragmentFile); }
+     
+                // load fragment
+                $$el.html(fragmentHtml);
+
+                 // load child fragments (recursively)
+                if (fragmentHtml) { await loadFragments(fragmentsRoot, $$el, false, includeCustomFragments, isAddCustomFragmentToList); }
+            }
+        };
+        const render = async () => {
+            let kind = (data.content ? data.content.kind : ''),
+                fragment = '',
+                $head = $('head'),
+                $pages = $('#pages'),
+                $content = $('#content');
+
+            const getPage = () => {
+                let page = null;
+                if (!kind) { // no content, 404
+                    if (pages['404']) { page = pages['404']; }
+                } else if (kind === kinds.package) { // package home
+                    if (pages.home) { page = pages.home; }
+                } else if (kind === kinds.page) {
+                    page = data.content;
+                };  
+                return page;
+            };                
+            const getFragment = () => {
+                let frag = '';
+                if (!kind) { // no content, 404
+                    frag = '404';
+                } else if (kind === kinds.package) {
+                    frag = 'package';
+                } else if ([kinds.examples, kinds.guides, kinds.objects, kinds.pages, kinds.api].indexOf(kind) !== -1) {
+                    frag = 'list-package-member';
+                } else if (kind === kinds.object) {
+                    frag = 'package-member-code';
+                } else if (kind === kinds.guide) {
+                    frag = 'package-member-nocode-guide';
+                } else if (kind === kinds.example) {
+                    frag = 'package-member-nocode-example';
+                } else if (kind === kinds.assembly) {
+                    frag = 'package-member-nocode-assembly';
+                } else if ([kinds.globals, kinds.components, kinds.namespaces, kinds.namespace, kinds.types].indexOf(kind) !== -1) {
+                    frag = 'list-assembly-member-code';
+                } else if ([kind.resources, kinds.routes, kinds.assets, kinds.libs, kinds.configs, kinds.settings].indexOf(kind) !== -1) {
+                    frag = 'list-assembly-member-nocode';
+                } else if ([kinds.global, kinds.component, kinds.annotation, kinds.class, kinds.struct, kind.enum, kinds.mixin, kinds.interface].indexOf(kind) !== -1) {
+                    frag = 'assembly-member-code';
+                } else if ([kinds.route, kinds.resource, kinds.asset, kinds.lib, kinds.config, kinds.setting, kinds.property, kinds.constant, kinds.method, kinds.event].indexOf(kind) !== -1) {
+                    frag = 'assembly-member-nocode';
+                } else if ([kinds.property, kinds.constant, kinds.method, kinds.event].indexOf(kind) !== -1) {
+                    frag = 'code-member';
+                }
+                return frag;
+            };    
+            const getList = async () => {
+                let list = [];
+                if (!data.page && ['', kinds.pages].indexOf(kind) !== -1) { // when not a page and these kinds
+                    switch(kind) {
+                        // NOTES - TEMP: any level that is introduced here for clarity, which does not
+                        //               have its own page, will open first item's page
+                        // so that group opens, if closed
+                        case kinds.package: 
+                            // Guide                    
+                            // API                      
+                            // Examples
+                            break;
+                        case kinds.guides:
+                            // Guide
+                            //  Group 1
+                            //   Topic 1
+                            //   ...
+                            //  Group 2
+                            //  ...
+                            break;
+                        case kinds.guide:
+                            // Guide
+                            //  Group 1
+                            //   Topic 1    
+                            //     Heading 1
+                            //     Heading 2
+                            //     ...
+                            //   Topic 2
+                            //   ...
+                            //  Group 2
+                            //  ...
+                            break;                            
+                        case kinds.api:
+                            // Guide
+                            // API
+                            //  Assemblies
+                            //   Group 1
+                            //    Asm 1
+                            //    ...
+                            //   Group 2
+                            //    ...
+                            //  Objects
+                            // Examples
+                            break;
+                        case kinds.objects:
+                            // Guide
+                            // API
+                            //  Assemblies
+                            //  Objects
+                            //   Group 1
+                            //    Obj 1
+                            //    ...
+                            //   Group 2
+                            //   ...
+                            // Examples
+                            break;
+                        case kinds.examples:
+                            // Guide
+                            // API
+                            // Examples
+                            //  Group 1
+                            //   Example 1
+                            //   ...
+                            //  Group 2
+                            //  ...
+                            break;
+                        case kinds.assembly:
+                            // Guide
+                            // API
+                            //  Assemblies
+                            //   Group 1
+                            //    Asm 1
+                            //    Asm 2  
+                            //    ...
+                            //   Group 2
+                            //   ...
+                            //  Objects
+                            // Examples
+                            break;
+                        case kinds.example:
+                           // Guide
+                            // API
+                            // Examples
+                            //  Group 1
+                            //   Example 1
+                            //   ...
+                            //  Group 2
+                            //  ...
+                            break;      
+                        case kinds.object:
+                            // Objects
+                            //  Group 1
+                            //   Example 1
+                            //   ...
+                            //  Group 2
+                            //  ...
+                            break;                                                    
+
+                    }
+                    } else if (kind === kinds.object) {
+                        // package-member-code
+                        // package-member-nocode-guide
+                    } else if (kind === kinds.example) {
+                        // package-member-nocode-example
+                    } else if (kind === ) {
+                        // package-member-nocode-assembly
+                    } else if ([kinds.globals, kinds.components, kinds.namespaces, kinds.namespace, kinds.types].indexOf(kind) !== -1) {
+                        // list-assembly-member-code
+                    } else if ([kind.resources, kinds.routes, kinds.assets, kinds.libs, kinds.configs, kinds.settings].indexOf(kind) !== -1) {
+                        // list-assembly-member-nocode
+                    } else if ([kinds.global, kinds.component, kinds.annotation, kinds.class, kinds.struct, kind.enum, kinds.mixin, kinds.interface].indexOf(kind) !== -1) {
+                        // assembly-member-code
+                    } else if ([kinds.route, kinds.resource, kinds.asset, kinds.lib, kinds.config, kinds.setting, kinds.property, kinds.constant, kinds.method, kinds.event].indexOf(kind) !== -1) {
+                        // assembly-member-nocode
+                    } else if ([kinds.property, kinds.constant, kinds.method, kinds.event].indexOf(kind) !== -1) {
+                        // code-member
+                    }                   
+                }
+                return list;
+            };
+            const refreshBranding = async () => {
+                if (isPackageVersionLocaleChanged) {
+                    isPackageVersionLocaleChanged = false;
+    
+                    // refresh each of the re/brandable areas
+                    let fragmentsRoot = data.theme.fragments;
+                    for (let $$el of customizableAreas) {
+                        await loadFragments(fragmentsRoot, $$el, true, true); 
+                    }
+                }
+            };
+            const loadPage = async () => {
+                let jsId = `_page_js`,
+                    cssId = `_page_css`,
+                    json = data.page;
+                   
+                // delete old page js/css elements, if any
+                $head.find('#' + jsId).remove();
+                $head.find('#' + cssId).remove();
+    
+                // load page, if available
+                if (json && json.html) {
+                    // load page's css
+                    if (json.css) { $(`<style id="${cssId}" type="text/css"> ${json.css} </style>`).appendTo($head); }
+    
+                     // load page's html
+                     $pages.html(json.html);
+    
+                    // load page's fragments
+                    let fragmentsRoot = `${data.rootUrl}/${json.fragments}`;
+                    await loadFragments(fragmentsRoot, $pages);
+    
+                    // load page's js and css
+                    if (json.js) { $(`<script id="${jsId}" type="text/javascript"> ${json.js} </script>`).appendTo($head); }
+                } else {
+                    // else, delete page html, if any
+                    $pages.html('');
+                }        
+            };            
+            const loadFragment = async () => {
+                // update fragment value
+                $content.attr('fragment', fragment);
+
+                // load fragment
+                await loadFragments(data.theme.fragments, $content, true, false);
+                
+                // reset fragment value 
+                $content.attr('fragment', '');
+            };
+            const loadVue = () => {
+                if (!vueApp) {
+                    vueApp = new Vue({
+                        el: `#root`,
+                        data: data
+                    });
+                }
+            };
+            const getTitle = () => {
+                if (!kind) { // 404
+                    return `${data.info.title}`;
+                } else {
+                    return `${data.content.name}${data.content.docs.parent.name ? ' - ' + data.content.docs.parent.name : ''} - ${data.info.title}`;
+                }
+            };
+
+            // define page or fragment to load
+            data.page = getPage();
+            if (!data.page) { fragment = getFragment(); }
+            if (!fragment) { throw new Error(`Unexpected kind ${kind}`); }
+
+            // define list items as per context
+            data.list = await getList();
+
+            // refresh theme branding, if need be
+            await refreshBranding();
+
+            // load page or fragment
+            if (data.page) {
+                await loadPage();
+            } else {
+                await loadFragment();
             }
 
-            // destroy previous app, if any
-            if (vueApp) {
-                vueApp.$destroy();
-                vueApp = null;
-            }        
-
-            // bind with a new app
-            vueApp = new Vue({
-                el: `#root`,
-                data: data
-            });
+            // bind with a new app, if not already bounded
+            loadVue();
 
             // update title
-            if (!data.content) { // 404
-                document.title = `${data.info.title}`;
-            } else {
-                document.title = `${data.info.title} - ${data.content.docs.parent.name ? data.content.docs.parent.name + ' - ' : ''}${data.content.name}`;
-            }
+            document.title = getTitle();
         };
         const parseUrl = async (hash) => {
             const getPackage = (name) => {
-                if (!name) { name =  (data.current.package ? data.current.package.name : '') || data.packages.default; }
+                if (!name) { name =  (data.package ? data.package.name : '') || data.packages.default; }
                 let pkg = data.packages.list.find((a) => a.name === name);
                 if (!pkg) { // default
                     pkg = data.packages.list.find((a) => a.name === data.packages.default);
@@ -157,7 +423,7 @@
                 return pkg;
             };
             const getVersion = (pkg, name) => {
-                if (!name) { name = (data.current.version ? data.current.version.name : '') || pkg.versions.default; }
+                if (!name) { name = (data.version ? data.version.name : '') || pkg.versions.default; }
                 let ver = pkg.versions.list.find((a) => a.name === name);
                 if (!ver) { // default
                     ver = pkg.versions.list.find((a) => a.name === pkg.versions.default);
@@ -166,7 +432,7 @@
                 return ver;
             };
             const getLocale = (ver, name) => {
-                if (!name) { name = (data.current.locale ? data.current.locale.name : '') || ver.locales.default; }
+                if (!name) { name = (data.locale ? data.locale.name : '') || ver.locales.default; }
                 let loc = ver.locales.list.find((a) => a.name === name);
                 if (!loc) { // default
                     loc = ver.locales.list.find((a) => a.name === ver.locales.default);
@@ -182,7 +448,7 @@
             // [0]: empty | <collection>
             // [1]: empty | <version>
             // [2]: empty | <locale>
-            // [3]: empty | api | examples | guides | pages | <asm>
+            // [3]: empty | api | examples | guides | pages | objects | <asm>
             // [4]: empty | <example> | <guide> | <page> | components | globals | namespaces | types | routes | resources | assets | libs | 
             //      configs | settings
             // [5]: empty | <component> | <global> | <namespace> | <type? | <route> | <resource> | <asset> | <lib> | 
@@ -200,6 +466,8 @@
             // <collection>/<version>/<locale>/guides/<guide>                           ./flairjs/v1/en/guides/getting-started
             // <collection>/<version>/<locale>/pages/                                   ./flairjs/v1/en/pages.json
             // <collection>/<version>/<locale>/pages/<page>                             ./flairjs/v1/en/pages/changelog.html
+            // <collection>/<version>/<locale>/objects/                                 ./flairjs/v1/en/objects.json
+            // <collection>/<version>/<locale>/objects/<object>                         ./flairjs/v1/en/objects/something.json
             // <collection>/<version>/<locale>/<asm>/                                   ./flairjs/v1/en/flair/index.json
             // <collection>/<version>/<locale>/<asm>/components/                        ./flairjs/v1/en/flair/components.json
             // <collection>/<version>/<locale>/<asm>/components/<component>/            ./flairjs/v1/en/flair/components/Host.json
@@ -221,7 +489,7 @@
             // <collection>/<version>/<locale>/<asm>/assets/<asset>/                    ./flairjs/v1/en/flair/assets/license.json
             // <collection>/<version>/<locale>/<asm>/libs/                              ./flairjs/v1/en/flair/libs.json
             // <collection>/<version>/<locale>/<asm>/libs/<lib>/                        ./flairjs/v1/en/flair/libs/firebase.json
-            // <collection>/<version>/<locale>/<asm>/configs/                            ./flairjs/v1/en/flair/configs.json
+            // <collection>/<version>/<locale>/<asm>/configs/                           ./flairjs/v1/en/flair/configs.json
             // <collection>/<version>/<locale>/<asm>/configs/<config>/                  ./flairjs/v1/en/flair/configs/bootEngine.json
             // <collection>/<version>/<locale>/<asm>/settings/                          ./flairjs/v1/en/flair/settings.json
             // <collection>/<version>/<locale>/<asm>/settings/<setting>/                ./flairjs/v1/en/flair/settings/bootstrapper.json
@@ -273,8 +541,9 @@
                             // <collection>/<version>/<locale>/examples/
                             // <collection>/<version>/<locale>/guides/
                             // <collection>/<version>/<locale>/pages/
+                            // <collection>/<version>/<locale>/objects/
                             // <collection>/<version>/<locale>/<asm>/
-                            if ([kinds.api, kinds.examples, kinds.guides, kinds.pages].indexOf(items[3]) !== -1) {
+                            if ([kinds.api, kinds.examples, kinds.guides, kinds.pages, kinds.objects].indexOf(items[3]) !== -1) {
                                 parts.file = `${items[3]}.json`;
 
                                 if (length > 4) {
@@ -282,6 +551,7 @@
                                     // <collection>/<version>/<locale>/examples/<example>
                                     // <collection>/<version>/<locale>/guides/<guide>
                                     // <collection>/<version>/<locale>/pages/<page>
+                                    // <collection>/<version>/<locale>/objects/<object>
                                     parts.section = items[4];
                                 }
                             } else { // <asm>
@@ -340,6 +610,7 @@
             return parts;
         };
         const go = async () => {
+            let parts = null;
             const loadSearch = async (file) => {
                 // load
                 let searchJson = await getData(file);
@@ -350,7 +621,7 @@
                 }
             };
             const groupContentItems = () => {
-                if (data.content && data.content.items) {
+                if (data.content && Array.isArray(data.content.items)) {
                     let items = {
                         all: data.content.items,        // { link, name, group, desc }
                         grouped: []                     // { group,  items: { link, name, desc } }
@@ -371,22 +642,15 @@
                     data.content.items = items;
                 }
             };   
-
-            // clear previous (404 scenario)
-            data.content = null;
-            data.section = '';
-
-            // load location from current hash
-            let parts = await parseUrl(location.hash.replace('#/', ''));
-
-            // load one-time-loading data, if package, version or locale is changed
-            let isError = false;
-            if (!data.current.package || 
-                !data.current.version || 
-                !data.current.locale ||
-                parts.package.name !== data.current.package.name ||
-                parts.version.name !== data.current.version.name ||
-                parts.locale.name !== data.current.locale.name) {
+            const packageVersionLocale = async () => {
+                let isSuccess = true;
+                if (!data.package || 
+                    !data.version || 
+                    !data.locale ||
+                    parts.package.name !== data.package.name ||
+                    parts.version.name !== data.version.name ||
+                    parts.locale.name !== data.locale.name) {
+                    
                     let json = await getData(`${parts.locale.root}/${parts.locale.file}`);
                     if (json) {
                         // load search data, if available
@@ -396,16 +660,20 @@
                         if (json.strings) { data.strings = await getData(`${parts.locale.root}/${json.strings}`) || {}; }
 
                         // set new current
-                        data.current.package = parts.package;
-                        data.current.version = parts.version;
-                        data.current.locale = parts.locale;
+                        data.package = parts.package;
+                        data.version = parts.version;
+                        data.locale = parts.locale;
+                        data.rootUrl = parts.locale.root;
 
                         // info
                         data.info = json.info;
 
+                        // branding
+                        data.branding = json.branding;
+
                         // set locale and direction to html
-                        $('html').attr('lang', data.current.locale.name);
-                        if (data.current.locale.rtl) {
+                        $('html').attr('lang', data.locale.name);
+                        if (data.locale.rtl) {
                             $('html').attr('dir', 'rtl');
                         } else {
                             $('html').removeAttr('dir');
@@ -413,29 +681,58 @@
 
                         // clean home
                         delete json.info;
+                        delete json.branding;
                         delete json.search;
                         delete json.strings;
 
                         // keep this package home json handy, it may be needed when 
                         // coming again to home page of this package
                         data.home = json;
-                    } else {
-                        isError = true;
-                    }
-            }
 
-            // load url specific content
-            if (!isError) {
+                        // further load home/404 pages
+                        pages.home = null;
+                        pages['404'] = null;
+                        if (data.branding.pages.home) {
+                            let pageJson = await getData(`${data.rootUrl}/${data.branding.pages.home}`);
+                            if (pageJson) { pages.home = pageJson; }
+                        }
+                        if (data.branding.pages['404']) {
+                            let pageJson = await getData(`${data.rootUrl}/${data.branding.pages['404']}`);
+                            if (pageJson) { pages['404'] = pageJson; }
+                        }
+
+                        // set flag, so on next refresh re/load branding specific customizable 
+                        // areas can be loaded/changed
+                        isPackageVersionLocaleChanged = true;
+                    } else {
+                        isSuccess = false;
+                    }
+                }
+
+                // return
+                return isSuccess;
+            };
+
+            // clear previous
+            data.content = null;
+            data.section = '';
+
+            // load location from current hash
+            parts = await parseUrl(location.hash.replace('#/', ''));
+
+            // load one-time-loading data, if package, version or locale is changed or not loaded as yet
+            if (await packageVersionLocale()) {
+                // load url specific content
                 if (!parts.file) { // this is home page
                     // ensure url still has all parts to represents home
-                    location.replace(`${location.href.split('#')[0]}#/${data.current.package.name}/${data.current.version.name}/${data.current.locale.name}`);
+                    location.replace(`${location.href.split('#')[0]}#/${data.package.name}/${data.version.name}/${data.locale.name}`);
 
                     // set content
                     if (data.home) { 
                         data.content = data.home; 
                     }
                 } else {
-                    data.content = await getData(`${data.current.locale.root}/${parts.file}`);
+                    data.content = await getData(`${data.locale.root}/${parts.file}`);
                 }
                 data.section = (data.content ? parts.section : '');
                 groupContentItems();
@@ -444,26 +741,7 @@
             // render
             await render();            
         };
-        const loadTheme = async (theme) => {
-            const getTemplate = (file) => {
-                return new Promise((resolve, reject) => {
-                    if (file.startsWith('./')) { file = file.substr(2); }  // remove ./
-                    if (file.startsWith('/')) { file = file.substr(1); }  // remove /
-                    
-                    $.ajax({
-                        dataType: "text",
-                        url: file,
-                        success: (text) => {
-                            resolve(text);
-                        },
-                        error: (err) => {
-                            console.error(err);
-                            resolve(null); // still resolve
-                        }
-                    });
-                   
-                });
-            };
+        const loadTheme = async () => {
             const loadJS = (url) => {
                 return new Promise((resolve, reject) => {
                     $.ajax({
@@ -483,56 +761,45 @@
                 return new Promise((resolve, reject) => {
                     var $e = $('<link>', { rel: 'stylesheet', type: 'text/css', href: url })[0];
                     $e.onload = () => {
-                        resolve();
+                        resolve($e);
                     };
                     $e.onerror = (err) => {
                         console.error(err);
-                        resolve(null); // still resolve
+                        resolve($e); // still resolve
                     };
                     $('head').append($e);
                 });
-            };
-            const loadFragments = async ($elements) => {
-                let selector = 'div[fragment]';
-                // if not given, load from root
-                if (!$elements) { $elements = $(selector); }
-
-                // load
-                let $childElements = null,
-                    $$el = null;
-                for(let $el of $elements) {
-                    $$el = $($el);
-                    $$el.html(await getTemplate(`${theme.fragments}/${$$el.attr('fragment')}.html`));
- 
-                    // find fragments in this newly loaded area (recursive call)
-                    $childElements = $$el.find(selector);
-                    if ($childElements.length > 0) { await loadFragments($childElements); }
-                }
-            };
+            };    
 
             // activate material design
-            $('body').bootstrapMaterialDesign();
-
-            // load theme js, css
-            for(let file of theme.files.js) { await loadJS(file); }
-            for(let file of theme.files.css) { await loadCSS(file); }
+            $('body').bootstrapMaterialDesign();            
 
             // load theme's structural content (index.html)
-            let result = false;
-            let templateContent = await getTemplate(theme.template);
+            let templateContent = await getTemplate(data.theme.index);
             if (templateContent) {
+                // load theme css
+                for(let file of data.theme.files.css) { await loadCSS(file); }
+
                 // load template content 
-                $('#root').html(templateContent);
+                let $root = $(`#root`);
+                $root.html(templateContent);
 
                 // find defined fragments in template and load them all
-                await loadFragments();
+                // this is a recursive call and will load all fragments 
+                // defined inside loaded fragments too
+                // leaving custom fragments, which will be added later
+                customizableAreas = [];
+                await loadFragments(data.theme.fragments, $root, false, false, true);
+
+                // load theme js
+                for(let file of data.theme.files.js) { await loadJS(file); }
 
                 // done
-                result = true;
+                return true;
             }
 
-            // return
-            return result;
+            // otherwise
+            return false;
         };
         const initData = async (json) => {
             const dl = (linkText) => {
@@ -593,7 +860,7 @@
                     //  asmName://asmMemberType/asmMemberName::memberName~overloadNumber            -- for specified assembly in current collection
                     //  asmName@colName://asmMemberType/asmMemberName::memberName~overloadNumber    -- for specified assembly in specified collection
                     let current = data.content,
-                        root = data.current.locale.root;
+                        root = data.locale.root;
                     if (linkText.startsWith('~')) { // another overload to current memberName
                         link = `${root}/${current.docs.parent.members}/${current.name}${linkText}`;
                     } else if (linkText.startsWith('::')) { // another memberName of current asmMemberName
@@ -611,6 +878,8 @@
                                 asmName = items[0].trim();  // asmName
                             }
                         } else {
+                            // TODO: fix this - as per new area specific data approach
+                            // there is no vueData
                             asmName = vueData.current.asm.name || '';
                             colName = vueData.current.collection; 
                         }
@@ -648,7 +917,7 @@
                         // link
                         link = (asmName ? `${asmName}/` : '') + asmMemberType + (asmMemberName ? `/${asmMemberName}` : '' ) + (memberName ? `/${memberName}` : '') + (overloadNumber ? `~${overloadNumber}` : '');
                         if (colName) {
-                            link = `${root.replace(data.current.package.name, colName)}/${link}`; // replace current collection with given collection -- keeping version and locale same
+                            link = `${root.replace(data.package.name, colName)}/${link}`; // replace current collection with given collection -- keeping version and locale same
                         } else {
                             link = `${root}/${link}`;
                         }
@@ -658,56 +927,99 @@
                 // return
                 return link;
      
-            };           
+            };  
+            const setCookie = (name, value, expires, path, domain, secure) => {
+                let theValue = JSON.stringify({ value: value });
+                document.cookie = name + '=' + escape(theValue) +
+                    ((expires) ? '; expires=' + expires : '') +
+                    ((path) ? '; path=' + path : '') +
+                    ((domain) ? '; domain=' + domain : '') +
+                    ((secure) ? '; secure' : '');
+            };
+            const getCookie = (name) => {
+                let cookie = ' ' + document.cookie,
+                    search = ' ' + name + '=',
+                    offset = 0,
+                    end = 0,
+                    theValue = null,
+                    value = null;
+                if (cookie.length > 0) {
+                    offset = cookie.indexOf(search);
+                    if (offset !== -1) {
+                        offset += search.length;
+                        end = cookie.indexOf(';', offset);
+                        if (end === -1) { end = cookie.length; }
+                        theValue = unescape(cookie.substring(offset, end));
+                    }
+                }
+                if (theValue) {
+                    try {
+                        value = JSON.parse(theValue).value;
+                    } catch (err) {
+                        // ignore
+                    }
+                } 
+                return value;
+            };
+            const resetCookie = (name) => {
+                document.cookie = name + '=; Max-Age=-99999999;';
+            };
+            const closeArea = (name, days) => {
+                // check area validity
+                let isValid = false;
+                for(let $a of customizableAreas) { if ($a.attr('id') === name) { isValid = true; break; } }
+                
+                if (isValid) {
+                    // clear the area html
+                    $$el = $(`#${name}`);
+                    $$el.html(''); // this should hide it because of ':empty' css rule
+
+                    // set cookie for number of days for the area (it will remain close for these number of days)
+                    let date = new Date();
+                    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                    setCookie(name, true, date.toUTCString(), '/');
+                }
+            };
 
             // one time per-refresh loaded data
             data = {};
             data.packages = json.packages;
             data.builder = json.builder;
-            data.branding = json.branding;
-            data.ui = json.ui;
-            data.dl = dl;
-            data.go = (url) => { location.hash = url; };
-            data.home = () => { location.hash = ''; };
-            data.back = () => { window.history.back(); };
+            data.theme = json.theme;
+
+            // inbuilt funcs
+            data.func = {
+                dl: dl,
+                go: (url) => { location.hash = url; },
+                back: () => { window.history.back(); },
+                cookie: {
+                    get: getCookie,
+                    set: setCookie,
+                    reset: resetCookie
+                },
+                closeArea: closeArea,
+                hasRightBarContent: () => { return $(`#c2a`).html() || $(`#adv`).html(); },
+                hasLeftBarContent: () => { return data.list.length > 0; },
+                isShowingPage: () => { return data.page !== null; },
+                isShowingDocs: () => { return data.page === null; }
+            };
 
             // one time per-package/version/locale loaded data
-            data.current = {};
-            data.current.package = null;
-            data.current.version = null;
-            data.current.locale = null;            
-            data.home = {};
+            data.package = null;
+            data.version = null;
+            data.locale = null;    
+            data.rootUrl = '';   
+            data.branding = {};
+            data.home = null;
+            data.page = null;
             data.info = {};
             data.search = null;
             data.strings = {};
 
             // per url-change loaded data
+            data.list = [];
             data.content = null; // null means 404
             data.section = ''; 
-
-            // ui rendering data
-
-            // visibility flags
-            data.flags = {
-                showHeader: false,
-                showFooter: false,
-                showSidebar: false,
-                showHighlights: false,
-                showContent: false,
-                show404: false,
-                showSearch: false,
-                showPackageSelector: false,
-                showVersionSelector: false,
-                showLocaleSelector: false
-            };
-
-            // specific areas
-            data.areas = {};
-            data.areas.header = {};
-            data.areas.sidebar = {};
-            data.areas.content = {};
-            data.areas.highlights = {};
-            data.areas.footer = {};
         };
         const init = async () => {
             let result = false;
@@ -719,7 +1031,7 @@
                 await initData(json);
 
                 // load theme
-                if (await loadTheme(json.theme)) {
+                if (await loadTheme()) {
                     // setup location change handler
                     addEventListener('hashchange', go, false);
 
@@ -742,10 +1054,13 @@
                 }
             },
 
-            // define custom function
-            // for use by themes or elsewhere
-            // e.g., pages
-            func: (name, fn) => { func[name] = fn; } 
+            data: () => { return data; },
+
+            // define theme function
+            themeFunc: (name, fn) => { data.theme.func[name] = fn; },
+
+            // define page function
+            pageFunc: (name, fn) => { data.page.func[name] = fn; }
         };
 
         // return

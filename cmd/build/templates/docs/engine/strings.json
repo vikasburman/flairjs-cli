@@ -6,6 +6,9 @@
 
     "packages": {
     },
+
+    "asmGroups": {
+    },
     
     "names": {
         "package": "Collection", 

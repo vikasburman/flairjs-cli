@@ -885,85 +885,38 @@ module.exports = {
         // full custom theme
         branding: {
             // favicon path (in context of docs root without any path)
-            favicon: 'favicon.png',
+            favicon: './favicon.png',        
 
             // logo path (in context of docs root)
             // logo should be of 512x512
             logo: './themes/default/images/logo.png',            
 
-            // define custom highlight page, if any
-            // this page can only exists only as default package's page
-            // when not defined, it will use theme's default highlight fragment instead
-            highlights: '',
-
-            // define custom home page, if any
-            // this page can only exists only as default package's page
-            // when not defined, it will use theme's default home fragment
-            home: '',
-        },
-
-        ui: {
-            // if search was built and this is set to true, search will be enabled
-            search: true,
-
-            // if multiple packages exists and this is set to true, collections selector will be enabled
-            packages: true,
-
-            // if multiple versions in selected package exists and this is set to true, version selector will be enabled
-            versions: true,
-
-            // if multiple locales are configured and this is set to true, locale selector will be enabled
-            locales: true,
-
-            // if breadcrumbs to be shown, where applicable
-            breadcrubms: true,
-
-            // any custom links that needs to be shown on UI
-            // any named links can be defined here, which can be referenced in 
-            // various menus in required order
-            // linkName: { 
-            //      title: ''
-            //          '-': to show divider line
-            //          'text': to show given text as menu title
-            //          'ns.key:value': to pick localized text from given ns.key - from strings.json file and by default use given value as text itself
-            //      link: '' 
-            //          to open given link
-            //          if link is not given, the item will be treated as a menu group item
-            //      img: ''
-            //          used only when link is placed on services menu (where title is set as tooltip)
-            //  }
-            links: {
-                '-': { title: '-' },
-                twitter: { title: 'services.twitter:Twitter', img: '', link: '#' },
-                facebook: { title: 'services.facebook:Facebook', img: '', link: '#' },
-                linkedin: { title: 'services.linkedin:LinkedIn', img: '', link: '#' },
-                youtube: { title: 'services.youtube:YouTube', img: '', link: '#' },
-                github: { title: 'services.github:Github', img: '', link: '#' },
-                npm: { title: 'services.npm:NPM', img: '', link: '#' },
-                medium: { title: 'services.medium:Medium', img: '', link: '#' },
-                cdn: { title: 'services.cdn:CDN', img: '', link: '#' },
+            // define customization for pages
+            // a custom page can be developed as individual page 
+            // any page that is being defined here as known page will NOT show up in list of pages 
+            // to keep away awkward UI, e.g., showing 404 page in list would be wierd
+            // page definition can be defined as:
+            // 'pageName' 
+            pages: {
+                home: '',
+                '404': ''
             },
 
-            // menu items for UI
-            menus: {
-                // 2-level menus can be defined as:
-                // (max 6 top level menu groups are supported)
-                // topLevelLink1: link1, link2, link3, ...
-                // topLevelLink2: link1, link2, link3, ...
-                // topLevelLinkOnly
-                top: [],
-
-                // 2-level menus can be defined as:
-                // (max 3 top level menu groups are supported)
-                // topLevelLink1: link1, link2, link3, ...
-                // topLevelLink2 link1, link2, link3, ...
-                // ...
-                bottom: [],
-
-                // 1-level menus can be defined as:
-                // (max 5 menu items are supported)
-                // link1, link2, link3, ...
-                services: []
+            // define customization for fragments
+            // a custom fragment can be developed as individual page 
+            // any page that is being defined here as fragment will NOT show up in list of pages 
+            // to keep away awkward UI, e.g., showing banner as a full page would be wierd
+            // Note: Not all fragments are customizable though, only below listed ones are
+            // fragment definition can be defined as:
+            // 'pageName' 
+            fragments: {
+                banner: '',
+                menu: '',
+                attn: '',
+                c2a: '',
+                adv: '',
+                footer: '',
+                footnote: ''
             }
         },
 
@@ -991,7 +944,21 @@ module.exports = {
             //          //          list: [],
             //          //          
             //          //          // default locale for this version
-            //          //          default: ''
+            //          //          default: '',
+            //          //      }
+            //          //
+            //          //      // version specific branding
+            //          //      // same as above main definition
+            //          //      branding: {
+            //          //          favicon: '',
+            //          //          
+            //          //          ...
+            //          //    
+            //          //          fragments: {
+            //          //              home: '',    
+            //          //              banner: '',
+            //          //              ...
+            //          //          }
             //          //      }
             //          // }
             //          list: [],

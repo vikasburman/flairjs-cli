@@ -228,7 +228,7 @@ const buildAssembly = async (options, asm) => {
         options.logger(1, 'assembly', chalk.keyword('orange')(asm.name), `${asm.members} members`);
         runTasks(options, 'pre', 'all-asms', asm);
         runTasks(options, 'pre', 'asm', asm);
-
+        
         await createAssembly(options, asm);  // main, config, settings
         await injectIncludes(options, asm); // includes
         await injectGlobals(options, asm); // globals
